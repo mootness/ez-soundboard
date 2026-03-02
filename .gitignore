@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Claude Code
+.claude/
+
+# User soundboard data (personal audio files and config)
+soundboard/
+soundboard.json
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini

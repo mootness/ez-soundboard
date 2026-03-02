@@ -1,0 +1,15 @@
+{
+  "name": "ez-soundboard",
+  "version": "1.0.0",
+  "description": "A desktop soundboard app",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-packager . EZSoundboard --platform=win32 --arch=x64 --out=dist --overwrite --ignore=dist --ignore=node_modules/.cache && powershell -NoProfile -Command \"Compress-Archive -Path 'dist/EZSoundboard-win32-x64/*' -DestinationPath 'dist/EZSoundboard-win-x64.zip' -Force; Write-Host 'Built: dist/EZSoundboard-win-x64.zip'\""
+  },
+  "devDependencies": {
+    "@electron/packager": "^19.0.5",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

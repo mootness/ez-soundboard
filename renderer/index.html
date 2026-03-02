@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EZ Soundboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <span class="app-title">&#127932; EZ Soundboard</span>
+    </div>
+    <div class="header-center">
+      <div class="master-volume">
+        <label for="masterVolume">Master</label>
+        <input type="range" id="masterVolume" min="0" max="100" value="100" />
+        <span id="masterVolumeValue">100%</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <button id="importFolderBtn" class="btn btn-secondary" title="Import all audio from a folder">
+        &#128193; Import Folder
+      </button>
+      <button id="stopAllBtn" class="btn btn-danger" title="Stop all playing sounds">
+        &#9632; Stop All
+      </button>
+      <button id="helpBtn" class="btn btn-secondary btn-icon" title="Discord &amp; audio routing help">?</button>
+    </div>
+  </header>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <div class="search-wrap">
+        <span class="search-icon">&#128269;</span>
+        <input type="text" id="searchInput" placeholder="Search tiles…" autocomplete="off" spellcheck="false" />
+        <button id="searchClearBtn" class="search-clear hidden" title="Clear search">&#10005;</button>
+      </div>
+    </div>
+    <div class="toolbar-right">
+      <div class="size-toggle" title="Tile grid size">
+        <button class="size-btn" data-size="small"  title="Small — 25 tiles">S</button>
+        <button class="size-btn active" data-size="medium" title="Medium — 20 tiles">M</button>
+        <button class="size-btn" data-size="large"  title="Large — 12 tiles">L</button>
+      </div>
+      <div class="audio-device-group">
+        <div class="audio-device-row">
+          <span class="audio-device-label">&#128266; Output</span>
+          <select id="audioOutputSelect" class="audio-output-select" title="Primary output (e.g. virtual cable for Discord)">
+            <option value="">Default</option>
+          </select>
+        </div>
+        <div class="audio-device-row">
+          <span class="audio-device-label">&#127911; Monitor</span>
+          <select id="audioMonitorSelect" class="audio-output-select" title="Monitor output — hear clips on your own speakers while Discord gets the primary output">
+            <option value="">Off</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Page tabs -->
+  <nav class="page-tabs" id="pageTabs">
+    <!-- Rendered by JS -->
+  </nav>
+
+  <!-- Tile grid -->
+  <main class="tile-grid" id="tileGrid">
+    <!-- Rendered by JS -->
+  </main>
+
+  <!-- Info bar -->
+  <footer class="info-bar">
+    <span id="infoText">Ready</span>
+    <span id="shortcutHint">Right-click a tile to assign a shortcut key</span>
+  </footer>
+
+  <!-- Custom context menu -->
+  <div id="contextMenu" class="context-menu hidden">
+    <div class="context-menu-section" id="ctxTileName"></div>
+    <div class="context-divider"></div>
+    <button class="context-item" id="ctxRename">&#9998; Rename label</button>
+    <button class="context-item" id="ctxSetShortcut">&#9000; Set shortcut key</button>
+    <button class="context-item" id="ctxChangeFile">&#127925; Change audio file</button>
+    <div class="context-item context-volume">
+      <span>&#128266; Volume</span>
+      <input type="range" id="ctxVolume" min="0" max="100" value="100" />
+      <span id="ctxVolumeValue">100%</span>
+    </div>
+    <div class="context-item context-colors">
+      <span>&#127912; Color</span>
+      <div class="color-swatches" id="colorSwatches"></div>
+    </div>
+    <div class="context-divider"></div>
+    <button class="context-item" id="ctxShowInFolder">&#128194; Show in folder</button>
+    <button class="context-item context-danger" id="ctxDelete">&#128465; Delete tile</button>
+  </div>
+
+  <!-- Rename modal -->
+  <div id="renameModal" class="modal-overlay hidden">
+    <div class="modal">
+      <h3>Rename Tile</h3>
+      <input type="text" id="renameInput" placeholder="Enter label..." maxlength="40" />
+      <div class="modal-actions">
+        <button id="renameCancelBtn" class="btn btn-secondary">Cancel</button>
+        <button id="renameConfirmBtn" class="btn btn-primary">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shortcut capture modal -->
+  <div id="shortcutModal" class="modal-overlay hidden">
+    <div class="modal shortcut-modal">
+      <h3>Set Shortcut Key</h3>
+      <p class="shortcut-modal-for" id="shortcutModalFor"></p>
+      <div class="shortcut-capture-box" id="shortcutCaptureBox">
+        <span id="shortcutCaptureLabel">Press any key&hellip;</span>
+      </div>
+      <p class="shortcut-hint">Tip: use letters, numbers, F-keys, or Space.<br>Escape cancels.</p>
+      <div class="modal-actions">
+        <button id="shortcutClearBtn" class="btn btn-secondary">Clear shortcut</button>
+        <button id="shortcutCancelBtn" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help modal -->
+  <div id="helpModal" class="modal-overlay hidden">
+    <div class="modal modal-wide">
+      <h3>&#127911; Discord &amp; Audio Routing Setup</h3>
+
+      <div class="help-section">
+        <p class="help-intro">Discord records your <strong>microphone</strong>, not your speakers. To send soundboard clips into Discord you need a <strong>virtual audio cable</strong> — software that makes one app's output appear as another app's microphone input.</p>
+      </div>
+
+      <div class="help-section">
+        <div class="help-step-title">Step 1 — Install VB-Cable (free, one-time)</div>
+        <p>Download from <strong>vb-audio.com/Cable</strong> and run the installer as Administrator. Restart your PC if prompted. This adds two virtual devices: <em>CABLE Input</em> and <em>CABLE Output</em>.</p>
+      </div>
+
+      <div class="help-section">
+        <div class="help-step-title">Step 2 — Configure EZ Soundboard</div>
+        <div class="help-device-row">
+          <span class="help-badge output">&#128266; Output</span>
+          <span>CABLE Input (VB-Audio Virtual Cable)</span>
+        </div>
+        <div class="help-device-row">
+          <span class="help-badge monitor">&#127911; Monitor</span>
+          <span>Your headphones / speakers (so <em>you</em> still hear clips)</span>
+        </div>
+      </div>
+
+      <div class="help-section">
+        <div class="help-step-title">Step 3 — Configure Discord</div>
+        <p>Settings → Voice &amp; Video → <strong>Input Device</strong> → <em>CABLE Output (VB-Audio Virtual Cable)</em></p>
+      </div>
+
+      <div class="help-section help-note">
+        <strong>&#9888; VB-Cable is not included</strong> — it must be installed separately. Without it, the Output and Monitor dropdowns above will only show your physical devices and Discord routing will not work.
+      </div>
+
+      <div class="modal-actions">
+        <button id="helpCloseBtn" class="btn btn-primary">Got it</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden file input for tile assignment -->
+  <input type="file" id="fileInput" accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.opus,.webm" style="display:none" />
+
+  <script src="app.js"></script>
+</body>
+</html>
