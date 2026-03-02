@@ -2,13 +2,13 @@
 
 A lightweight desktop soundboard app built with Electron. Assign audio clips to tiles, organize them across pages, and route audio to Discord using a virtual audio cable.
 
-![EZ Soundboard](assets/screenshot.png)
+![EZ Soundboard](assets/screenshot.jpg)
 
 ---
 
 ## Download
 
-**[⬇ Download latest release](../../releases/latest)**
+**[⬇ Download latest release](https://github.com/Mootness/ez-soundboard/releases/latest)**
 
 Extract the ZIP and run `EZSoundboard.exe` — no installation required.
 
@@ -51,7 +51,7 @@ MP3, WAV, OGG, FLAC, M4A, AAC, Opus, WebM
 **Requirements:** Node.js 18+
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/ez-soundboard.git
+git clone https://github.com/Mootness/ez-soundboard.git
 cd ez-soundboard
 npm install
 npm start          # Run in development
