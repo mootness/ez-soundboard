@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld('api', {
   getDataPath: () => ipcRenderer.invoke('config:getDataPath'),
   deleteFile: (filePath) => ipcRenderer.invoke('tile:delete', filePath),
   showInFolder: (filePath) => ipcRenderer.invoke('shell:showInFolder', filePath),
-  onOpenHelpModal: (cb) => ipcRenderer.on('open-help-modal', cb)
+  onOpenHelpModal: (cb) => ipcRenderer.on('open-help-modal', cb),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
 })

@@ -74,3 +74,9 @@ Your soundboard config and audio files are stored in:
 ## License
 
 MIT — see [LICENSE](LICENSE)
+
+---
+
+## Support
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/mootness)

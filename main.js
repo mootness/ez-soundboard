@@ -173,6 +173,10 @@ ipcMain.handle('shell:showInFolder', (_, filePath) => {
   }
 })
 
+ipcMain.handle('shell:openExternal', (_, url) => {
+  shell.openExternal(url)
+})
+
 function createAppMenu() {
   const menu = Menu.buildFromTemplate([
     {
@@ -213,6 +217,10 @@ function createAppMenu() {
         {
           label: 'Discord & Audio Setup',
           click: () => mainWindow?.webContents.send('open-help-modal')
+        },
+        {
+          label: 'Support on Ko-fi',
+          click: () => shell.openExternal('https://ko-fi.com/mootness')
         }
       ]
     }
