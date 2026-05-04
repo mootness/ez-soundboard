@@ -351,7 +351,7 @@ function buildTileEl(tile, slot, pageIdx = currentPageIndex) {
       const file = e.dataTransfer.files[0]
       const ext = file.name.split('.').pop().toLowerCase()
       if (AUDIO_EXTS.includes(ext)) {
-        tile.file = file.path
+        tile.file = window.api.getPathForFile(file)
         tile.label = tile.label || stripExtension(file.name)
         saveConfig()
         renderTiles()
@@ -400,7 +400,7 @@ function buildEmptyTileEl(slot) {
       const file = e.dataTransfer.files[0]
       const ext = file.name.split('.').pop().toLowerCase()
       if (AUDIO_EXTS.includes(ext)) {
-        createTileInSlot(slot, stripExtension(file.name), file.path)
+        createTileInSlot(slot, stripExtension(file.name), window.api.getPathForFile(file))
       }
     }
   })
