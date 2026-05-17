@@ -37,6 +37,7 @@
       "signAndEditExecutable": false,
       "sign": "./sign-noop.js"
     },
+    "artifactName": "EZ-Soundboard-Setup-${version}.${ext}",
     "nsis": {
       "oneClick": true,
       "allowToChangeInstallationDirectory": false,
