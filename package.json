@@ -33,7 +33,9 @@
       "target": [
         "nsis"
       ],
-      "icon": "assets/icon.png"
+      "icon": "assets/icon.png",
+      "signAndEditExecutable": false,
+      "sign": "./sign-noop.js"
     },
     "nsis": {
       "oneClick": true,
