@@ -1087,7 +1087,7 @@ async function init() {
   renderPages()
   renderTiles()
   await populateAudioDevices()
-  setInfo('Ready — click a tile to play, right-click for options')
+  setInfo('Ready — click a tile to play, right-click for options ✓')
 }
 
 init()
