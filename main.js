@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { initUpdater, checkForUpdates } = require('./updater')
 
 // When running as a portable exe (built with electron-builder portable target),
 // PORTABLE_EXECUTABLE_DIR is set to the directory containing the exe.
@@ -213,6 +214,11 @@ function createAppMenu() {
       label: 'Help',
       submenu: [
         {
+          label: 'Check for Updates…',
+          click: () => checkForUpdates()
+        },
+        { type: 'separator' },
+        {
           label: 'Discord & Audio Setup',
           click: () => mainWindow?.webContents.send('open-help-modal')
         },
@@ -231,6 +237,7 @@ app.whenReady().then(() => {
   createWindow()
   createTray()
   createAppMenu()
+  initUpdater(mainWindow)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
