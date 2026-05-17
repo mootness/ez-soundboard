@@ -10,5 +10,9 @@ contextBridge.exposeInMainWorld('api', {
   deleteFile: (filePath) => ipcRenderer.invoke('tile:delete', filePath),
   showInFolder: (filePath) => ipcRenderer.invoke('shell:showInFolder', filePath),
   onOpenHelpModal: (cb) => ipcRenderer.on('open-help-modal', cb),
-  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url)
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  updaterCheck: () => ipcRenderer.invoke('updater:check'),
+  updaterDownload: () => ipcRenderer.invoke('updater:download'),
+  updaterInstall: () => ipcRenderer.invoke('updater:install'),
+  onUpdaterStatus: (cb) => ipcRenderer.on('updater:status', (_, data) => cb(data))
 })

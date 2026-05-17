@@ -1091,3 +1091,49 @@ async function init() {
 }
 
 init()
+
+// ── Updater UI ───────────────────────────────
+;(function initUpdaterUI() {
+  const updateBar = document.getElementById('updateBar')
+  const updateMessage = document.getElementById('updateMessage')
+  const updateActionBtn = document.getElementById('updateActionBtn')
+  const updateDismissBtn = document.getElementById('updateDismissBtn')
+
+  window.api.onUpdaterStatus((data) => {
+    updateBar.classList.remove('hidden')
+    updateActionBtn.classList.add('hidden')
+
+    switch (data.status) {
+      case 'checking':
+        updateMessage.textContent = 'Checking for updates…'
+        break
+      case 'available':
+        updateMessage.textContent = `Update available: v${data.version}`
+        updateActionBtn.textContent = 'Download'
+        updateActionBtn.classList.remove('hidden')
+        updateActionBtn.onclick = () => window.api.updaterDownload()
+        break
+      case 'not-available':
+        updateMessage.textContent = 'You\'re on the latest version.'
+        setTimeout(() => updateBar.classList.add('hidden'), 4000)
+        break
+      case 'downloading':
+        updateMessage.textContent = `Downloading update… ${data.percent}%`
+        break
+      case 'downloaded':
+        updateMessage.textContent = 'Update ready — restart to install.'
+        updateActionBtn.textContent = 'Restart'
+        updateActionBtn.classList.remove('hidden')
+        updateActionBtn.onclick = () => window.api.updaterInstall()
+        break
+      case 'error':
+        updateMessage.textContent = `Update error: ${data.message}`
+        setTimeout(() => updateBar.classList.add('hidden'), 6000)
+        break
+    }
+  })
+
+  updateDismissBtn.addEventListener('click', () => {
+    updateBar.classList.add('hidden')
+  })
+})()
