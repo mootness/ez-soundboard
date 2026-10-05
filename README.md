@@ -10,7 +10,7 @@ A lightweight desktop soundboard app built with Electron. Assign audio clips to 
 
 **[⬇ Download latest release](https://github.com/Mootness/ez-soundboard/releases/latest)**
 
-Extract the ZIP and run `EZSoundboard.exe` — no installation required.
+Run `EZ-Soundboard-Setup-<version>.exe` — it installs for your user account (no admin needed). The app checks for updates when it starts and offers to install new versions.
 
 ---
 
@@ -18,13 +18,23 @@ Extract the ZIP and run `EZSoundboard.exe` — no installation required.
 
 - **Tiles & Pages** — Organize sounds across multiple named pages
 - **Keyboard Shortcuts** — Assign a key or combo (e.g. `Alt+1`, `Ctrl+Shift+F`) to any tile for instant playback
+- **Global Hotkeys** — Optionally make shortcuts work while other apps (like games) are focused
 - **Virtual Cable Support** — Route audio to Discord via VB-Cable (free)
 - **Monitor Output** — Hear clips in your own headphones while Discord gets the primary output
 - **Per-tile controls** — Individual volume, color labels, rename, and reassign
 - **Import folder** — Bulk-add all audio files from a folder in one click
-- **System tray** — Minimize to tray; app keeps running in the background
+- **System tray** — Click the tray icon to hide or show the window; global hotkeys keep working while it's hidden
 - **Tile sizes** — Switch between Small / Medium / Large grid layouts
 - **Search** — Filter tiles by name instantly
+- **Auto-updates** — New versions are offered in-app
+
+---
+
+## Keyboard Shortcuts
+
+Right-click a tile → **Set shortcut key**, then press a key or hold Ctrl / Alt / Shift and press a key for a combo.
+
+By default shortcuts only work while EZ Soundboard is the focused window. Turn on **Global hotkeys** in the toolbar to make them work everywhere — in a game, in Discord, anywhere. While it's on, the keys you bind are captured system-wide (pressing them won't type in other apps), so combos like `Alt+1` or numpad keys are the safest choices. If a combo is already used by another app, the status bar says so and that shortcut keeps working only while EZ Soundboard is focused.
 
 ---
 
@@ -54,20 +64,24 @@ MP3, WAV, OGG, FLAC, M4A, AAC, Opus, WebM
 git clone https://github.com/Mootness/ez-soundboard.git
 cd ez-soundboard
 npm install
-npm start          # Run in development
-npm run build      # Package → dist/EZSoundboard-win-x64.zip
+npm start                # Run in development
+npm run build            # Installer → dist/EZ-Soundboard-Setup-<version>.exe
+npm run build:portable   # Single portable .exe that keeps its data next to itself
+npm run publish          # Build and publish a GitHub release (needs GH_TOKEN)
 ```
 
-The build script packages the app with `electron-packager` and zips the output into `dist/EZSoundboard-win-x64.zip`.
+Builds use `electron-builder`. The installer build also writes `dist/latest.yml`, which the in-app updater reads from the GitHub release.
 
 ---
 
 ## User Data
 
-Your soundboard config and audio files are stored in:
+Your soundboard config (`soundboard.json`) is stored in:
 
-- **Standalone EXE:** `EZSoundboard-data/` folder next to the EXE
-- **Dev mode:** Windows `AppData\Roaming\ez-soundboard\`
+- **Installed app and `npm start`:** `%APPDATA%\ez-soundboard\`
+- **Portable build:** `EZSoundboard-data\` folder next to the exe
+
+Audio files aren't copied — tiles point to your files where they are, so keep them in place.
 
 ---
 
