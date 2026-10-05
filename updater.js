@@ -2,6 +2,9 @@ const { autoUpdater } = require('electron-updater')
 const { app, ipcMain } = require('electron')
 
 let mainWindow = null
+// Only user-requested checks (and downloads) report "checking", "up to date" and errors;
+// the automatic startup check stays quiet unless an update is available
+let userRequested = false
 
 function isDev() {
   return !app.isPackaged
@@ -14,7 +17,7 @@ function initUpdater(win) {
   autoUpdater.autoInstallOnAppQuit = true
 
   autoUpdater.on('checking-for-update', () => {
-    sendStatus('checking')
+    if (userRequested) sendStatus('checking')
   })
 
   autoUpdater.on('update-available', (info) => {
@@ -22,7 +25,7 @@ function initUpdater(win) {
   })
 
   autoUpdater.on('update-not-available', () => {
-    sendStatus('not-available')
+    if (userRequested) sendStatus('not-available')
   })
 
   autoUpdater.on('download-progress', (progress) => {
@@ -34,7 +37,7 @@ function initUpdater(win) {
   })
 
   autoUpdater.on('error', (err) => {
-    sendStatus('error', { message: err.message })
+    if (userRequested) sendStatus('error', { message: err.message })
   })
 
   ipcMain.handle('updater:check', () => {
@@ -42,12 +45,19 @@ function initUpdater(win) {
   })
 
   ipcMain.handle('updater:download', () => {
-    autoUpdater.downloadUpdate()
+    userRequested = true
+    // Failures arrive through the 'error' event
+    autoUpdater.downloadUpdate().catch(() => {})
   })
 
   ipcMain.handle('updater:install', () => {
     autoUpdater.quitAndInstall()
   })
+
+  // Check once the UI is ready to show the update bar
+  if (!isDev()) {
+    win.webContents.once('did-finish-load', () => checkForUpdates({ silent: true }))
+  }
 }
 
 function sendStatus(status, data = {}) {
@@ -56,7 +66,8 @@ function sendStatus(status, data = {}) {
   }
 }
 
-function checkForUpdates() {
+function checkForUpdates({ silent = false } = {}) {
+  userRequested = !silent
   if (isDev()) {
     sendStatus('checking')
     setTimeout(() => {
@@ -64,7 +75,8 @@ function checkForUpdates() {
     }, 1000)
     return
   }
-  autoUpdater.checkForUpdates()
+  // Failures arrive through the 'error' event
+  autoUpdater.checkForUpdates()?.catch(() => {})
 }
 
 module.exports = { initUpdater, checkForUpdates }
