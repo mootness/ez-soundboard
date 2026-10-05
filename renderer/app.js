@@ -3,7 +3,12 @@
    Electron renderer process (Vanilla JS)
 ═══════════════════════════════════════════════ */
 
-const AUDIO_EXTS = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'webm']
+// File types Chromium can play the sound of — video files play their audio track.
+// Keep in sync with MEDIA_EXTS in main.js.
+const MEDIA_EXTS = [
+  'mp3', 'wav', 'ogg', 'oga', 'opus', 'flac', 'm4a', 'aac', 'weba', 'webm', 'mka',
+  'mp4', 'm4v', 'mov', 'mkv', 'ogv', '3gp'
+]
 const COLORS = ['default', 'red', 'orange', 'green', 'blue', 'purple', 'pink']
 
 const TILE_SIZES = {
@@ -357,7 +362,7 @@ function buildTileEl(tile, slot, pageIdx = currentPageIndex) {
       el.classList.remove('drag-over')
       const file = e.dataTransfer.files[0]
       const ext = file.name.split('.').pop().toLowerCase()
-      if (AUDIO_EXTS.includes(ext)) {
+      if (MEDIA_EXTS.includes(ext)) {
         tile.file = window.api.getPathForFile(file)
         tile.label = tile.label || stripExtension(file.name)
         saveConfig()
@@ -406,7 +411,7 @@ function buildEmptyTileEl(slot) {
       e.preventDefault()
       const file = e.dataTransfer.files[0]
       const ext = file.name.split('.').pop().toLowerCase()
-      if (AUDIO_EXTS.includes(ext)) {
+      if (MEDIA_EXTS.includes(ext)) {
         createTileInSlot(slot, stripExtension(file.name), window.api.getPathForFile(file))
       }
     }
@@ -497,7 +502,9 @@ async function playOrStopTile(tile) {
     }
 
     audio.play().catch(err => {
-      setInfo(`Error playing: ${err.message}`)
+      setInfo(err.name === 'NotSupportedError'
+        ? `Can't play "${tile.label}" — the file is missing or its format isn't supported`
+        : `Error playing: ${err.message}`)
       activeAudio.delete(tile.id)
       updateTilePlayingState(tile.id, false)
     })
@@ -509,6 +516,17 @@ async function playOrStopTile(tile) {
       activeAudio.delete(tile.id)
       updateTilePlayingState(tile.id, false)
     })
+
+    // A video can play with no sound when it has no audio track, or one Chromium can't
+    // decode (e.g. AC3/DTS in .mkv) — stop it and say so instead of "playing" silently
+    audio.addEventListener('playing', () => {
+      setTimeout(() => {
+        if (activeAudio.get(tile.id) === audio && audio.webkitAudioDecodedByteCount === 0) {
+          stopTileAudio(tile.id)
+          setInfo(`No playable sound in "${tile.label}" — its audio track is missing or in an unsupported format`)
+        }
+      }, 1000)
+    }, { once: true })
 
     // Monitor output — play a second instance to a different device so you hear it locally
     if (monitorSinkId && monitorSinkId !== selectedSinkId) {
