@@ -196,6 +196,7 @@ function addPage() {
 }
 
 function deletePage(idx) {
+  config.pages[idx].tiles.forEach(t => stopTileAudio(t.id))
   config.pages.splice(idx, 1)
   if (currentPageIndex >= config.pages.length) {
     currentPageIndex = config.pages.length - 1
@@ -462,21 +463,21 @@ function moveTileToSlot(fromSlot, toSlot) {
 }
 
 // ── Audio Playback ────────────────────────────
-async function playOrStopTile(tile) {
-  if (activeAudio.has(tile.id)) {
-    // Stop primary
-    const audio = activeAudio.get(tile.id)
+// Stops a tile on both the primary and monitor outputs
+function stopTileAudio(tileId) {
+  for (const players of [activeAudio, activeMonitor]) {
+    const audio = players.get(tileId)
+    if (!audio) continue
     audio.pause()
     audio.currentTime = 0
-    activeAudio.delete(tile.id)
-    // Stop monitor
-    if (activeMonitor.has(tile.id)) {
-      const mon = activeMonitor.get(tile.id)
-      mon.pause()
-      mon.currentTime = 0
-      activeMonitor.delete(tile.id)
-    }
-    updateTilePlayingState(tile.id, false)
+    players.delete(tileId)
+  }
+  updateTilePlayingState(tileId, false)
+}
+
+async function playOrStopTile(tile) {
+  if (activeAudio.has(tile.id)) {
+    stopTileAudio(tile.id)
     setInfo(`Stopped: ${tile.label}`)
   } else {
     // Play
@@ -676,6 +677,9 @@ document.addEventListener('keydown', (e) => {
     hideRenameModal()
     return
   }
+
+  // Holding a key auto-repeats keydown, which would toggle the tile on and off
+  if (e.repeat) return
 
   const tile = buildShortcutMap().get(shortcutFromEvent(e))
   if (tile) {
@@ -877,12 +881,7 @@ ctxDelete.addEventListener('click', () => {
   const page = config.pages[ctxPageIndex]
   if (!page) return
   page.tiles = page.tiles.filter(t => t.id !== ctxTileId)
-  // Stop audio if playing
-  if (activeAudio.has(ctxTileId)) {
-    const audio = activeAudio.get(ctxTileId)
-    audio.pause()
-    activeAudio.delete(ctxTileId)
-  }
+  stopTileAudio(ctxTileId)
   hideContextMenu()
   saveConfig()
   renderTiles()
@@ -1210,7 +1209,7 @@ async function init() {
   renderPages()
   renderTiles()
   await populateAudioDevices()
-  setInfo('Ready — click a tile to play, right-click for options ✓')
+  setInfo('Ready — click a tile to play, right-click for options')
   syncGlobalHotkeys()
 }
 

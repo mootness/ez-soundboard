@@ -10,14 +10,13 @@ const DATA_DIR = process.env.PORTABLE_EXECUTABLE_DIR
   ? path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'EZSoundboard-data')
   : app.getPath('userData')
 
-const CONFIG_PATH    = path.join(DATA_DIR, 'soundboard.json')
-const SOUNDBOARD_DIR = path.join(DATA_DIR, 'soundboard')
+const CONFIG_PATH = path.join(DATA_DIR, 'soundboard.json')
 
 let mainWindow
 let tray
 
 function ensureDirectories() {
-  fs.mkdirSync(SOUNDBOARD_DIR, { recursive: true })
+  fs.mkdirSync(DATA_DIR, { recursive: true })
 }
 
 function defaultConfig() {
@@ -145,26 +144,6 @@ ipcMain.handle('dialog:openFile', async () => {
 ipcMain.handle('config:read', () => readConfig())
 
 ipcMain.handle('config:write', (_, config) => writeConfig(config))
-
-ipcMain.handle('config:getDataPath', () => ({
-  configPath: CONFIG_PATH,
-  soundboardDir: SOUNDBOARD_DIR
-}))
-
-ipcMain.handle('tile:delete', (_, filePath) => {
-  try {
-    if (filePath && fs.existsSync(filePath)) {
-      // Only delete if file is inside the soundboard dir
-      if (filePath.startsWith(SOUNDBOARD_DIR)) {
-        fs.unlinkSync(filePath)
-      }
-    }
-    return true
-  } catch (e) {
-    console.error('Failed to delete file:', e)
-    return false
-  }
-})
 
 ipcMain.handle('shell:showInFolder', (_, filePath) => {
   if (filePath && fs.existsSync(filePath)) {
