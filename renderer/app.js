@@ -26,6 +26,8 @@ let currentTileSize = 'medium'
 let selectedSinkId = ''
 let monitorSinkId = ''
 let searchQuery = ''
+let globalHotkeys = false
+let lastHotkeySync = null   // JSON of the hotkeys last sent to the main process
 
 // Context menu state
 let ctxTileId = null
@@ -60,6 +62,8 @@ const shortcutCaptureBox = document.getElementById('shortcutCaptureBox')
 const shortcutCaptureLabel = document.getElementById('shortcutCaptureLabel')
 const shortcutClearBtn   = document.getElementById('shortcutClearBtn')
 const shortcutCancelBtn  = document.getElementById('shortcutCancelBtn')
+const shortcutGlobalNote = document.getElementById('shortcutGlobalNote')
+const globalHotkeysBtn   = document.getElementById('globalHotkeysBtn')
 
 const searchInput    = document.getElementById('searchInput')
 const searchClearBtn = document.getElementById('searchClearBtn')
@@ -119,6 +123,7 @@ async function loadConfig() {
     tileGrid.dataset.size = currentTileSize
     selectedSinkId = config.settings?.audioOutputDeviceId ?? ''
     monitorSinkId  = config.settings?.monitorOutputDeviceId ?? ''
+    globalHotkeys  = config.settings?.globalHotkeys ?? false
   } catch (e) {
     console.error('Failed to load config:', e)
   }
@@ -126,6 +131,7 @@ async function loadConfig() {
 
 async function saveConfig() {
   config.settings.masterVolume = masterVolume
+  syncGlobalHotkeys()
   await window.api.writeConfig(config)
 }
 
@@ -678,6 +684,74 @@ document.addEventListener('keydown', (e) => {
   }
 })
 
+// ── Global Hotkeys ────────────────────────────
+
+// e.code → Electron accelerator key, for keys that aren't a simple pattern (see acceleratorKey)
+const ACCELERATOR_KEYS = {
+  Space: 'Space', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Insert: 'Insert',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+  ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  NumpadAdd: 'numadd', NumpadSubtract: 'numsub', NumpadMultiply: 'nummult', NumpadDivide: 'numdiv', NumpadDecimal: 'numdec',
+  Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+  Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backquote: '`'
+}
+
+function acceleratorKey(code) {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3)
+  if (/^Digit\d$/.test(code)) return code.slice(5)
+  if (/^Numpad\d$/.test(code)) return 'num' + code.slice(6)
+  if (/^F\d+$/.test(code)) return code
+  return ACCELERATOR_KEYS[code] ?? null
+}
+
+// Electron accelerator for a stored shortcut ("Alt+Digit1" → "Alt+1"), or null if the key has none
+function toAccelerator(shortcut) {
+  const parts = shortcut.split('+')
+  const key = acceleratorKey(parts.pop())
+  return key ? [...parts, key].join('+') : null
+}
+
+// Registers every tile shortcut system-wide while global hotkeys are on. Nothing is registered
+// while the shortcut dialog is open, so a key that's already bound still reaches the dialog.
+// Only calls the main process when the set of hotkeys actually changes.
+async function syncGlobalHotkeys() {
+  const hotkeys = []
+  if (globalHotkeys && shortcutModal.classList.contains('hidden')) {
+    buildShortcutMap().forEach((_, shortcut) => {
+      hotkeys.push({ shortcut, accelerator: toAccelerator(shortcut) })
+    })
+  }
+  const key = JSON.stringify(hotkeys)
+  if (key === lastHotkeySync) return
+  lastHotkeySync = key
+
+  const failed = await window.api.setGlobalHotkeys(hotkeys.filter(h => h.accelerator))
+  const focusedOnly = [...hotkeys.filter(h => !h.accelerator).map(h => h.shortcut), ...failed]
+  if (focusedOnly.length) {
+    setInfo(`Only work while focused (key unsupported or used by another app): ${focusedOnly.map(formatShortcutKey).join(', ')}`)
+  }
+}
+
+function updateGlobalHotkeysBtn() {
+  globalHotkeysBtn.classList.toggle('active', globalHotkeys)
+  globalHotkeysBtn.setAttribute('aria-pressed', String(globalHotkeys))
+}
+
+globalHotkeysBtn.addEventListener('click', () => {
+  globalHotkeys = !globalHotkeys
+  config.settings.globalHotkeys = globalHotkeys
+  updateGlobalHotkeysBtn()
+  setInfo(globalHotkeys
+    ? 'Global hotkeys on — shortcuts work even when other apps are focused'
+    : 'Global hotkeys off — shortcuts work only while EZ Soundboard is focused')
+  saveConfig()
+})
+
+window.api.onGlobalHotkey((shortcut) => {
+  const tile = buildShortcutMap().get(shortcut)
+  if (tile) playOrStopTile(tile)
+})
+
 // ── Context Menu ──────────────────────────────
 function buildColorSwatches() {
   colorSwatches.innerHTML = ''
@@ -925,7 +999,9 @@ function showShortcutModal(tile) {
   shortcutModalFor.textContent = `Tile: "${tile.label || 'Untitled'}"`
   shortcutCaptureLabel.textContent = prompt
   shortcutCaptureBox.classList.remove('captured')
+  shortcutGlobalNote.classList.toggle('hidden', !globalHotkeys)
   shortcutModal.classList.remove('hidden')
+  syncGlobalHotkeys()
 
   // While only modifiers are held, show them (e.g. "Alt+…") so the user knows they registered
   function showHeldModifiers(e) {
@@ -970,6 +1046,7 @@ function showShortcutModal(tile) {
     shortcutClearBtn.removeEventListener('click', onClear)
     shortcutCancelBtn.removeEventListener('click', onCancel)
     shortcutModal.classList.add('hidden')
+    syncGlobalHotkeys()
   }
 
   function onClear() {
@@ -1129,10 +1206,12 @@ async function init() {
   document.querySelectorAll('.size-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.size === currentTileSize)
   })
+  updateGlobalHotkeysBtn()
   renderPages()
   renderTiles()
   await populateAudioDevices()
   setInfo('Ready — click a tile to play, right-click for options ✓')
+  syncGlobalHotkeys()
 }
 
 init()

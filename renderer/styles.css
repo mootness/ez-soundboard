@@ -183,6 +183,22 @@ html, body {
 .size-btn:hover  { background: var(--surface2); color: var(--text); }
 .size-btn.active { background: var(--bg3); color: var(--accent); }
 
+/* Global hotkeys toggle */
+.toggle-btn {
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.toggle-btn:hover  { background: var(--surface2); color: var(--text); }
+.toggle-btn.active { background: var(--bg3); color: var(--accent); border-color: var(--accent); }
+
 /* Audio output select */
 .audio-output-select {
   padding: 5px 8px;
@@ -646,6 +662,18 @@ html, body {
   line-height: 1.5;
   margin-bottom: 14px;
 }
+
+.shortcut-global-note {
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--accent);
+  background: rgba(79,195,247,0.08);
+  border: 1px solid rgba(79,195,247,0.3);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 14px;
+}
+.shortcut-global-note.hidden { display: none; }
 
 /* ── Range Input Global ───────────────────────── */
 input[type=range] {
