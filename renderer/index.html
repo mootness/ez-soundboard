@@ -41,6 +41,7 @@
       </div>
     </div>
     <div class="toolbar-right">
+      <button id="globalHotkeysBtn" class="toggle-btn" aria-pressed="false" title="Global hotkeys: when on, tile shortcuts also work while other apps (like games) are focused. Keys you bind are then captured in every app, so combos like Alt+1 are safest.">&#9000; Global hotkeys</button>
       <div class="size-toggle" title="Tile grid size">
         <button class="size-btn" data-size="small"  title="Small — 25 tiles">S</button>
         <button class="size-btn active" data-size="medium" title="Medium — 20 tiles">M</button>
@@ -127,7 +128,8 @@
       <div class="shortcut-capture-box" id="shortcutCaptureBox">
         <span id="shortcutCaptureLabel">Press any key&hellip;</span>
       </div>
-      <p class="shortcut-hint">Tip: use letters, numbers, F-keys, or Space.<br>Escape cancels.</p>
+      <p class="shortcut-hint">Tip: use letters, numbers, F-keys, or Space.<br>Hold Ctrl, Alt, or Shift for combos like Alt+1.<br>Escape cancels.</p>
+      <p class="shortcut-global-note hidden" id="shortcutGlobalNote">Global hotkeys are on — this key will be captured in every app, so combos like Alt+1 are safest.</p>
       <div class="modal-actions">
         <button id="shortcutClearBtn" class="btn btn-secondary">Clear shortcut</button>
         <button id="shortcutCancelBtn" class="btn btn-secondary">Cancel</button>
@@ -182,9 +184,6 @@
       </div>
     </div>
   </div>
-
-  <!-- Hidden file input for tile assignment -->
-  <input type="file" id="fileInput" accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.opus,.webm" style="display:none" />
 
   <script src="app.js"></script>
 </body>

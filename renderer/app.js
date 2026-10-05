@@ -26,6 +26,8 @@ let currentTileSize = 'medium'
 let selectedSinkId = ''
 let monitorSinkId = ''
 let searchQuery = ''
+let globalHotkeys = false
+let lastHotkeySync = null   // JSON of the hotkeys last sent to the main process
 
 // Context menu state
 let ctxTileId = null
@@ -60,6 +62,8 @@ const shortcutCaptureBox = document.getElementById('shortcutCaptureBox')
 const shortcutCaptureLabel = document.getElementById('shortcutCaptureLabel')
 const shortcutClearBtn   = document.getElementById('shortcutClearBtn')
 const shortcutCancelBtn  = document.getElementById('shortcutCancelBtn')
+const shortcutGlobalNote = document.getElementById('shortcutGlobalNote')
+const globalHotkeysBtn   = document.getElementById('globalHotkeysBtn')
 
 const searchInput    = document.getElementById('searchInput')
 const searchClearBtn = document.getElementById('searchClearBtn')
@@ -119,6 +123,7 @@ async function loadConfig() {
     tileGrid.dataset.size = currentTileSize
     selectedSinkId = config.settings?.audioOutputDeviceId ?? ''
     monitorSinkId  = config.settings?.monitorOutputDeviceId ?? ''
+    globalHotkeys  = config.settings?.globalHotkeys ?? false
   } catch (e) {
     console.error('Failed to load config:', e)
   }
@@ -126,6 +131,7 @@ async function loadConfig() {
 
 async function saveConfig() {
   config.settings.masterVolume = masterVolume
+  syncGlobalHotkeys()
   await window.api.writeConfig(config)
 }
 
@@ -190,6 +196,7 @@ function addPage() {
 }
 
 function deletePage(idx) {
+  config.pages[idx].tiles.forEach(t => stopTileAudio(t.id))
   config.pages.splice(idx, 1)
   if (currentPageIndex >= config.pages.length) {
     currentPageIndex = config.pages.length - 1
@@ -456,21 +463,21 @@ function moveTileToSlot(fromSlot, toSlot) {
 }
 
 // ── Audio Playback ────────────────────────────
-async function playOrStopTile(tile) {
-  if (activeAudio.has(tile.id)) {
-    // Stop primary
-    const audio = activeAudio.get(tile.id)
+// Stops a tile on both the primary and monitor outputs
+function stopTileAudio(tileId) {
+  for (const players of [activeAudio, activeMonitor]) {
+    const audio = players.get(tileId)
+    if (!audio) continue
     audio.pause()
     audio.currentTime = 0
-    activeAudio.delete(tile.id)
-    // Stop monitor
-    if (activeMonitor.has(tile.id)) {
-      const mon = activeMonitor.get(tile.id)
-      mon.pause()
-      mon.currentTime = 0
-      activeMonitor.delete(tile.id)
-    }
-    updateTilePlayingState(tile.id, false)
+    players.delete(tileId)
+  }
+  updateTilePlayingState(tileId, false)
+}
+
+async function playOrStopTile(tile) {
+  if (activeAudio.has(tile.id)) {
+    stopTileAudio(tile.id)
     setInfo(`Stopped: ${tile.label}`)
   } else {
     // Play
@@ -615,9 +622,33 @@ function buildShortcutMap() {
   return map
 }
 
-// Human-readable label from e.code value stored in tile.shortcut
-function formatShortcutKey(code) {
-  if (!code) return ''
+// Modifier names held during a key event, in the order they're stored
+function heldModifiers(e) {
+  const mods = []
+  if (e.ctrlKey)  mods.push('Ctrl')
+  if (e.altKey)   mods.push('Alt')
+  if (e.shiftKey) mods.push('Shift')
+  return mods
+}
+
+// Shortcut string stored in tile.shortcut: held modifiers then e.code, e.g. "Ctrl+Alt+Digit1".
+// A plain key stays a bare e.code, so shortcuts saved before modifier support still match.
+// The Windows key isn't supported as a modifier.
+function shortcutFromEvent(e) {
+  if (e.metaKey) return null
+  return [...heldModifiers(e), e.code].join('+')
+}
+
+// Human-readable label for a stored shortcut, e.g. "Alt+Digit1" → "Alt+1"
+function formatShortcutKey(shortcut) {
+  if (!shortcut) return ''
+  const parts = shortcut.split('+')
+  const code = parts.pop()
+  return [...parts, formatKeyCode(code)].join('+')
+}
+
+// Human-readable label from an e.code value
+function formatKeyCode(code) {
   // Letters: KeyA → A
   if (/^Key[A-Z]$/.test(code)) return code.slice(3)
   // Top-row digits: Digit7 → 7
@@ -647,11 +678,82 @@ document.addEventListener('keydown', (e) => {
     return
   }
 
-  const map = buildShortcutMap()
-  if (map.has(e.code)) {
+  // Holding a key auto-repeats keydown, which would toggle the tile on and off
+  if (e.repeat) return
+
+  const tile = buildShortcutMap().get(shortcutFromEvent(e))
+  if (tile) {
     e.preventDefault()
-    playOrStopTile(map.get(e.code))
+    playOrStopTile(tile)
   }
+})
+
+// ── Global Hotkeys ────────────────────────────
+
+// e.code → Electron accelerator key, for keys that aren't a simple pattern (see acceleratorKey)
+const ACCELERATOR_KEYS = {
+  Space: 'Space', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace', Delete: 'Delete', Insert: 'Insert',
+  Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+  ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  NumpadAdd: 'numadd', NumpadSubtract: 'numsub', NumpadMultiply: 'nummult', NumpadDivide: 'numdiv', NumpadDecimal: 'numdec',
+  Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+  Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backquote: '`'
+}
+
+function acceleratorKey(code) {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3)
+  if (/^Digit\d$/.test(code)) return code.slice(5)
+  if (/^Numpad\d$/.test(code)) return 'num' + code.slice(6)
+  if (/^F\d+$/.test(code)) return code
+  return ACCELERATOR_KEYS[code] ?? null
+}
+
+// Electron accelerator for a stored shortcut ("Alt+Digit1" → "Alt+1"), or null if the key has none
+function toAccelerator(shortcut) {
+  const parts = shortcut.split('+')
+  const key = acceleratorKey(parts.pop())
+  return key ? [...parts, key].join('+') : null
+}
+
+// Registers every tile shortcut system-wide while global hotkeys are on. Nothing is registered
+// while the shortcut dialog is open, so a key that's already bound still reaches the dialog.
+// Only calls the main process when the set of hotkeys actually changes.
+async function syncGlobalHotkeys() {
+  const hotkeys = []
+  if (globalHotkeys && shortcutModal.classList.contains('hidden')) {
+    buildShortcutMap().forEach((_, shortcut) => {
+      hotkeys.push({ shortcut, accelerator: toAccelerator(shortcut) })
+    })
+  }
+  const key = JSON.stringify(hotkeys)
+  if (key === lastHotkeySync) return
+  lastHotkeySync = key
+
+  const failed = await window.api.setGlobalHotkeys(hotkeys.filter(h => h.accelerator))
+  const focusedOnly = [...hotkeys.filter(h => !h.accelerator).map(h => h.shortcut), ...failed]
+  if (focusedOnly.length) {
+    setInfo(`Only work while focused (key unsupported or used by another app): ${focusedOnly.map(formatShortcutKey).join(', ')}`)
+  }
+}
+
+function updateGlobalHotkeysBtn() {
+  globalHotkeysBtn.classList.toggle('active', globalHotkeys)
+  globalHotkeysBtn.setAttribute('aria-pressed', String(globalHotkeys))
+}
+
+globalHotkeysBtn.addEventListener('click', () => {
+  globalHotkeys = !globalHotkeys
+  config.settings.globalHotkeys = globalHotkeys
+  updateGlobalHotkeysBtn()
+  setInfo(globalHotkeys
+    ? 'Global hotkeys on — shortcuts work even when other apps are focused'
+    : 'Global hotkeys off — shortcuts work only while EZ Soundboard is focused')
+  saveConfig()
+})
+
+window.api.onGlobalHotkey((shortcut) => {
+  const tile = buildShortcutMap().get(shortcut)
+  if (tile) playOrStopTile(tile)
 })
 
 // ── Context Menu ──────────────────────────────
@@ -779,12 +881,7 @@ ctxDelete.addEventListener('click', () => {
   const page = config.pages[ctxPageIndex]
   if (!page) return
   page.tiles = page.tiles.filter(t => t.id !== ctxTileId)
-  // Stop audio if playing
-  if (activeAudio.has(ctxTileId)) {
-    const audio = activeAudio.get(ctxTileId)
-    audio.pause()
-    activeAudio.delete(ctxTileId)
-  }
+  stopTileAudio(ctxTileId)
   hideContextMenu()
   saveConfig()
   renderTiles()
@@ -882,37 +979,52 @@ function showPageRenameModal(page) {
 
 // ── Shortcut Modal ────────────────────────────
 
-const BLOCKED_SHORTCUT_CODES = new Set([
-  'Escape', 'F12',
+const MODIFIER_CODES = new Set([
   'MetaLeft', 'MetaRight', 'OSLeft', 'OSRight',
   'ControlLeft', 'ControlRight',
   'AltLeft', 'AltRight',
-  'ShiftLeft', 'ShiftRight',
-  'CapsLock'
+  'ShiftLeft', 'ShiftRight'
 ])
 
+// Keys that can't be a shortcut with any modifiers
+const BLOCKED_SHORTCUT_CODES = new Set(['F12', 'CapsLock'])
+// Combos Windows reserves (Alt+F4 closes the window)
+const BLOCKED_SHORTCUTS = new Set(['Alt+F4'])
+
 function showShortcutModal(tile) {
-  shortcutModalFor.textContent = `Tile: "${tile.label || 'Untitled'}"`
-  shortcutCaptureLabel.textContent = tile.shortcut
+  const prompt = tile.shortcut
     ? `Current: ${formatShortcutKey(tile.shortcut)} — press a new key to replace`
     : 'Press any key…'
+  shortcutModalFor.textContent = `Tile: "${tile.label || 'Untitled'}"`
+  shortcutCaptureLabel.textContent = prompt
   shortcutCaptureBox.classList.remove('captured')
+  shortcutGlobalNote.classList.toggle('hidden', !globalHotkeys)
   shortcutModal.classList.remove('hidden')
+  syncGlobalHotkeys()
+
+  // While only modifiers are held, show them (e.g. "Alt+…") so the user knows they registered
+  function showHeldModifiers(e) {
+    const mods = heldModifiers(e)
+    shortcutCaptureLabel.textContent = mods.length ? mods.join('+') + '+…' : prompt
+  }
 
   function onKey(e) {
     e.preventDefault()
     e.stopPropagation()
-    if (BLOCKED_SHORTCUT_CODES.has(e.code)) return
+    if (e.code === 'Escape') { cleanup(); return }
+    if (MODIFIER_CODES.has(e.code)) { showHeldModifiers(e); return }
 
-    // Check for conflict (keyed by e.code)
-    const map = buildShortcutMap()
-    const conflict = map.get(e.code)
+    const shortcut = shortcutFromEvent(e)
+    if (!shortcut || BLOCKED_SHORTCUT_CODES.has(e.code) || BLOCKED_SHORTCUTS.has(shortcut)) return
+
+    // Check for conflict
+    const conflict = buildShortcutMap().get(shortcut)
     if (conflict && conflict.id !== tile.id) {
       conflict.shortcut = undefined
     }
 
-    tile.shortcut = e.code
-    shortcutCaptureLabel.textContent = `Assigned: ${formatShortcutKey(e.code)}`
+    tile.shortcut = shortcut
+    shortcutCaptureLabel.textContent = `Assigned: ${formatShortcutKey(shortcut)}`
     shortcutCaptureBox.classList.add('captured')
     saveConfig()
     renderTiles()
@@ -921,11 +1033,19 @@ function showShortcutModal(tile) {
     setTimeout(cleanup, 800)
   }
 
+  function onKeyUp(e) {
+    if (MODIFIER_CODES.has(e.code) && !shortcutCaptureBox.classList.contains('captured')) {
+      showHeldModifiers(e)
+    }
+  }
+
   function cleanup() {
     document.removeEventListener('keydown', onKey, true)
+    document.removeEventListener('keyup', onKeyUp, true)
     shortcutClearBtn.removeEventListener('click', onClear)
     shortcutCancelBtn.removeEventListener('click', onCancel)
     shortcutModal.classList.add('hidden')
+    syncGlobalHotkeys()
   }
 
   function onClear() {
@@ -940,6 +1060,7 @@ function showShortcutModal(tile) {
 
   // Use capture phase so we intercept before anything else
   document.addEventListener('keydown', onKey, true)
+  document.addEventListener('keyup', onKeyUp, true)
   shortcutClearBtn.addEventListener('click', onClear)
   shortcutCancelBtn.addEventListener('click', onCancel)
 }
@@ -1084,10 +1205,12 @@ async function init() {
   document.querySelectorAll('.size-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.size === currentTileSize)
   })
+  updateGlobalHotkeysBtn()
   renderPages()
   renderTiles()
   await populateAudioDevices()
-  setInfo('Ready — click a tile to play, right-click for options ✓')
+  setInfo('Ready — click a tile to play, right-click for options')
+  syncGlobalHotkeys()
 }
 
 init()

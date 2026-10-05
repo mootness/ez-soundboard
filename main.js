@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, globalShortcut } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { initUpdater, checkForUpdates } = require('./updater')
@@ -10,14 +10,13 @@ const DATA_DIR = process.env.PORTABLE_EXECUTABLE_DIR
   ? path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'EZSoundboard-data')
   : app.getPath('userData')
 
-const CONFIG_PATH    = path.join(DATA_DIR, 'soundboard.json')
-const SOUNDBOARD_DIR = path.join(DATA_DIR, 'soundboard')
+const CONFIG_PATH = path.join(DATA_DIR, 'soundboard.json')
 
 let mainWindow
 let tray
 
 function ensureDirectories() {
-  fs.mkdirSync(SOUNDBOARD_DIR, { recursive: true })
+  fs.mkdirSync(DATA_DIR, { recursive: true })
 }
 
 function defaultConfig() {
@@ -146,26 +145,6 @@ ipcMain.handle('config:read', () => readConfig())
 
 ipcMain.handle('config:write', (_, config) => writeConfig(config))
 
-ipcMain.handle('config:getDataPath', () => ({
-  configPath: CONFIG_PATH,
-  soundboardDir: SOUNDBOARD_DIR
-}))
-
-ipcMain.handle('tile:delete', (_, filePath) => {
-  try {
-    if (filePath && fs.existsSync(filePath)) {
-      // Only delete if file is inside the soundboard dir
-      if (filePath.startsWith(SOUNDBOARD_DIR)) {
-        fs.unlinkSync(filePath)
-      }
-    }
-    return true
-  } catch (e) {
-    console.error('Failed to delete file:', e)
-    return false
-  }
-})
-
 ipcMain.handle('shell:showInFolder', (_, filePath) => {
   if (filePath && fs.existsSync(filePath)) {
     shell.showItemInFolder(filePath)
@@ -174,6 +153,53 @@ ipcMain.handle('shell:showInFolder', (_, filePath) => {
 
 ipcMain.handle('shell:openExternal', (_, url) => {
   shell.openExternal(url)
+})
+
+// Windows re-sends a global hotkey while it's held (key auto-repeat), which would toggle the
+// tile on and off. Electron gives no key-up event, so repeats are told apart by timing: they
+// arrive in a fast stream (< HOTKEY_REPEAT_GAP apart) starting 250–1000 ms after the press.
+const HOTKEY_REPEAT_GAP = 120
+const HOTKEY_REPEAT_DELAY_MAX = 1100
+const hotkeyTimings = new Map() // shortcut → { last, pending }
+
+function onGlobalHotkey(shortcut) {
+  const fire = () => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('hotkeys:triggered', shortcut)
+  }
+  const timing = hotkeyTimings.get(shortcut) ?? { last: 0, pending: null }
+  hotkeyTimings.set(shortcut, timing)
+  const now = Date.now()
+  const gap = now - timing.last
+  timing.last = now
+
+  if (gap < HOTKEY_REPEAT_GAP) {
+    // Part of a repeat stream, so a still-pending trigger just before it was the stream's start
+    clearTimeout(timing.pending)
+    timing.pending = null
+  } else if (gap < HOTKEY_REPEAT_DELAY_MAX) {
+    // A quick second press or the first auto-repeat — wait briefly to see if a stream follows
+    timing.pending = setTimeout(() => { timing.pending = null; fire() }, HOTKEY_REPEAT_GAP)
+  } else {
+    fire()
+  }
+}
+
+// Global hotkeys — tile shortcuts registered system-wide so they work while another app
+// (e.g. a game) is focused. Returns the shortcuts that couldn't be registered, usually
+// because another app already owns that key combo.
+ipcMain.handle('hotkeys:set', (_, hotkeys) => {
+  globalShortcut.unregisterAll()
+  const failed = []
+  for (const { shortcut, accelerator } of hotkeys) {
+    try {
+      const ok = globalShortcut.register(accelerator, () => onGlobalHotkey(shortcut))
+      if (!ok) failed.push(shortcut)
+    } catch (e) {
+      console.error('Invalid accelerator:', accelerator, e)
+      failed.push(shortcut)
+    }
+  }
+  return failed
 })
 
 function createAppMenu() {
@@ -232,17 +258,32 @@ function createAppMenu() {
   Menu.setApplicationMenu(menu)
 }
 
-app.whenReady().then(() => {
-  ensureDirectories()
-  createWindow()
-  createTray()
-  createAppMenu()
-  initUpdater(mainWindow)
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+// Single instance — a second copy (e.g. launched again while hidden in the tray) couldn't
+// register the global hotkeys and would race the first one writing the config file.
+// Packaged builds only: `npm start` shares the installed app's data folder and should still
+// launch while the installed app is running.
+if (app.isPackaged && !app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
   })
-})
+
+  app.whenReady().then(() => {
+    ensureDirectories()
+    createWindow()
+    createTray()
+    createAppMenu()
+    initUpdater(mainWindow)
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    })
+  })
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
@@ -250,4 +291,8 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   app.isQuitting = true
+})
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
 })
