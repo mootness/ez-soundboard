@@ -12,6 +12,13 @@ const DATA_DIR = process.env.PORTABLE_EXECUTABLE_DIR
 
 const CONFIG_PATH = path.join(DATA_DIR, 'soundboard.json')
 
+// File types Chromium can play the sound of — video files play their audio track.
+// Keep in sync with MEDIA_EXTS in renderer/app.js.
+const MEDIA_EXTS = [
+  'mp3', 'wav', 'ogg', 'oga', 'opus', 'flac', 'm4a', 'aac', 'weba', 'webm', 'mka',
+  'mp4', 'm4v', 'mov', 'mkv', 'ogv', '3gp'
+]
+
 let mainWindow
 let tray
 
@@ -114,9 +121,8 @@ ipcMain.handle('dialog:openFolder', async () => {
   if (result.canceled || result.filePaths.length === 0) return null
   const folderPath = result.filePaths[0]
 
-  const AUDIO_EXTS = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.opus', '.webm']
   const files = fs.readdirSync(folderPath)
-    .filter(f => AUDIO_EXTS.includes(path.extname(f).toLowerCase()))
+    .filter(f => MEDIA_EXTS.includes(path.extname(f).slice(1).toLowerCase()))
     .map(f => ({
       name: path.basename(f, path.extname(f)),
       file: path.join(folderPath, f)
@@ -129,9 +135,9 @@ ipcMain.handle('dialog:openFile', async () => {
   const result = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
     filters: [
-      { name: 'Audio Files', extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'webm'] }
+      { name: 'Audio & Video Files', extensions: MEDIA_EXTS }
     ],
-    title: 'Select Audio File'
+    title: 'Select Audio or Video File'
   })
   if (result.canceled || result.filePaths.length === 0) return null
   const filePath = result.filePaths[0]

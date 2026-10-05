@@ -50,9 +50,12 @@ The in-app **Help** menu (Help → Discord & Audio Setup) walks through this ste
 
 ---
 
-## Supported Audio Formats
+## Supported Formats
 
-MP3, WAV, OGG, FLAC, M4A, AAC, Opus, WebM
+- **Audio:** MP3, WAV, OGG / OGA, Opus, FLAC, M4A, AAC, WebM / WEBA, MKA
+- **Video** (plays the soundtrack): MP4, M4V, MOV, MKV, WebM, OGV, 3GP
+
+Not supported: Apple Lossless (ALAC) `.m4a` files, and videos whose audio is AC3, E-AC3 or DTS (common in movie rips) — those play no sound, and the app tells you so.
 
 ---
 
