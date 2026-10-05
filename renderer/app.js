@@ -615,9 +615,33 @@ function buildShortcutMap() {
   return map
 }
 
-// Human-readable label from e.code value stored in tile.shortcut
-function formatShortcutKey(code) {
-  if (!code) return ''
+// Modifier names held during a key event, in the order they're stored
+function heldModifiers(e) {
+  const mods = []
+  if (e.ctrlKey)  mods.push('Ctrl')
+  if (e.altKey)   mods.push('Alt')
+  if (e.shiftKey) mods.push('Shift')
+  return mods
+}
+
+// Shortcut string stored in tile.shortcut: held modifiers then e.code, e.g. "Ctrl+Alt+Digit1".
+// A plain key stays a bare e.code, so shortcuts saved before modifier support still match.
+// The Windows key isn't supported as a modifier.
+function shortcutFromEvent(e) {
+  if (e.metaKey) return null
+  return [...heldModifiers(e), e.code].join('+')
+}
+
+// Human-readable label for a stored shortcut, e.g. "Alt+Digit1" → "Alt+1"
+function formatShortcutKey(shortcut) {
+  if (!shortcut) return ''
+  const parts = shortcut.split('+')
+  const code = parts.pop()
+  return [...parts, formatKeyCode(code)].join('+')
+}
+
+// Human-readable label from an e.code value
+function formatKeyCode(code) {
   // Letters: KeyA → A
   if (/^Key[A-Z]$/.test(code)) return code.slice(3)
   // Top-row digits: Digit7 → 7
@@ -647,10 +671,10 @@ document.addEventListener('keydown', (e) => {
     return
   }
 
-  const map = buildShortcutMap()
-  if (map.has(e.code)) {
+  const tile = buildShortcutMap().get(shortcutFromEvent(e))
+  if (tile) {
     e.preventDefault()
-    playOrStopTile(map.get(e.code))
+    playOrStopTile(tile)
   }
 })
 
@@ -882,37 +906,50 @@ function showPageRenameModal(page) {
 
 // ── Shortcut Modal ────────────────────────────
 
-const BLOCKED_SHORTCUT_CODES = new Set([
-  'Escape', 'F12',
+const MODIFIER_CODES = new Set([
   'MetaLeft', 'MetaRight', 'OSLeft', 'OSRight',
   'ControlLeft', 'ControlRight',
   'AltLeft', 'AltRight',
-  'ShiftLeft', 'ShiftRight',
-  'CapsLock'
+  'ShiftLeft', 'ShiftRight'
 ])
 
+// Keys that can't be a shortcut with any modifiers
+const BLOCKED_SHORTCUT_CODES = new Set(['F12', 'CapsLock'])
+// Combos Windows reserves (Alt+F4 closes the window)
+const BLOCKED_SHORTCUTS = new Set(['Alt+F4'])
+
 function showShortcutModal(tile) {
-  shortcutModalFor.textContent = `Tile: "${tile.label || 'Untitled'}"`
-  shortcutCaptureLabel.textContent = tile.shortcut
+  const prompt = tile.shortcut
     ? `Current: ${formatShortcutKey(tile.shortcut)} — press a new key to replace`
     : 'Press any key…'
+  shortcutModalFor.textContent = `Tile: "${tile.label || 'Untitled'}"`
+  shortcutCaptureLabel.textContent = prompt
   shortcutCaptureBox.classList.remove('captured')
   shortcutModal.classList.remove('hidden')
+
+  // While only modifiers are held, show them (e.g. "Alt+…") so the user knows they registered
+  function showHeldModifiers(e) {
+    const mods = heldModifiers(e)
+    shortcutCaptureLabel.textContent = mods.length ? mods.join('+') + '+…' : prompt
+  }
 
   function onKey(e) {
     e.preventDefault()
     e.stopPropagation()
-    if (BLOCKED_SHORTCUT_CODES.has(e.code)) return
+    if (e.code === 'Escape') { cleanup(); return }
+    if (MODIFIER_CODES.has(e.code)) { showHeldModifiers(e); return }
 
-    // Check for conflict (keyed by e.code)
-    const map = buildShortcutMap()
-    const conflict = map.get(e.code)
+    const shortcut = shortcutFromEvent(e)
+    if (!shortcut || BLOCKED_SHORTCUT_CODES.has(e.code) || BLOCKED_SHORTCUTS.has(shortcut)) return
+
+    // Check for conflict
+    const conflict = buildShortcutMap().get(shortcut)
     if (conflict && conflict.id !== tile.id) {
       conflict.shortcut = undefined
     }
 
-    tile.shortcut = e.code
-    shortcutCaptureLabel.textContent = `Assigned: ${formatShortcutKey(e.code)}`
+    tile.shortcut = shortcut
+    shortcutCaptureLabel.textContent = `Assigned: ${formatShortcutKey(shortcut)}`
     shortcutCaptureBox.classList.add('captured')
     saveConfig()
     renderTiles()
@@ -921,8 +958,15 @@ function showShortcutModal(tile) {
     setTimeout(cleanup, 800)
   }
 
+  function onKeyUp(e) {
+    if (MODIFIER_CODES.has(e.code) && !shortcutCaptureBox.classList.contains('captured')) {
+      showHeldModifiers(e)
+    }
+  }
+
   function cleanup() {
     document.removeEventListener('keydown', onKey, true)
+    document.removeEventListener('keyup', onKeyUp, true)
     shortcutClearBtn.removeEventListener('click', onClear)
     shortcutCancelBtn.removeEventListener('click', onCancel)
     shortcutModal.classList.add('hidden')
@@ -940,6 +984,7 @@ function showShortcutModal(tile) {
 
   // Use capture phase so we intercept before anything else
   document.addEventListener('keydown', onKey, true)
+  document.addEventListener('keyup', onKeyUp, true)
   shortcutClearBtn.addEventListener('click', onClear)
   shortcutCancelBtn.addEventListener('click', onCancel)
 }

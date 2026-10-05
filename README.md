@@ -17,7 +17,7 @@ Extract the ZIP and run `EZSoundboard.exe` — no installation required.
 ## Features
 
 - **Tiles & Pages** — Organize sounds across multiple named pages
-- **Keyboard Shortcuts** — Assign a key to any tile for instant playback
+- **Keyboard Shortcuts** — Assign a key or combo (e.g. `Alt+1`, `Ctrl+Shift+F`) to any tile for instant playback
 - **Virtual Cable Support** — Route audio to Discord via VB-Cable (free)
 - **Monitor Output** — Hear clips in your own headphones while Discord gets the primary output
 - **Per-tile controls** — Individual volume, color labels, rename, and reassign
