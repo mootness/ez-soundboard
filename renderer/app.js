@@ -1234,7 +1234,7 @@ async function init() {
   renderPages()
   renderTiles()
   await populateAudioDevices()
-  setInfo('Ready — click a tile to play, right-click for options')
+  setInfo((await window.api.getStartupNotice()) || 'Ready — click a tile to play, right-click for options')
   syncGlobalHotkeys()
 }
 

@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   selectFile: () => ipcRenderer.invoke('dialog:openFile'),
   readConfig: () => ipcRenderer.invoke('config:read'),
   writeConfig: (config) => ipcRenderer.invoke('config:write', config),
+  getStartupNotice: () => ipcRenderer.invoke('config:startupNotice'),
   showInFolder: (filePath) => ipcRenderer.invoke('shell:showInFolder', filePath),
   onOpenHelpModal: (cb) => ipcRenderer.on('open-help-modal', cb),
   onShowInfo: (cb) => ipcRenderer.on('show-info', (_, message) => cb(message)),
