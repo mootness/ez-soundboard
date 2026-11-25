@@ -91,6 +91,7 @@ function generateId() {
 
 function setInfo(msg) {
   infoText.textContent = msg
+  infoText.title = msg   // a long message is cut off with "…" in a narrow window; hover shows it all
 }
 
 function getPage() {
@@ -816,11 +817,13 @@ function showContextMenu(x, y, tile, pageIdx) {
 
   contextMenu.classList.remove('hidden')
 
-  // Position — keep on screen
-  const menuW = 220, menuH = 280
-  const vpW = window.innerWidth, vpH = window.innerHeight
-  contextMenu.style.left = Math.min(x, vpW - menuW) + 'px'
-  contextMenu.style.top  = Math.min(y, vpH - menuH) + 'px'
+  // Position — keep the whole menu inside the window. Its size is measured, not assumed (the
+  // height varies with the layout), and from the corner so its last position can't squeeze it.
+  const margin = 6
+  contextMenu.style.left = contextMenu.style.top = '0px'
+  const { width, height } = contextMenu.getBoundingClientRect()
+  contextMenu.style.left = Math.max(margin, Math.min(x, window.innerWidth - width - margin)) + 'px'
+  contextMenu.style.top  = Math.max(margin, Math.min(y, window.innerHeight - height - margin)) + 'px'
 }
 
 function hideContextMenu() {
@@ -913,6 +916,8 @@ document.addEventListener('click', (e) => {
 document.addEventListener('contextmenu', (e) => {
   if (!e.target.closest('.tile:not(.tile-empty)')) hideContextMenu()
 })
+// Resizing or snapping the window could leave an open menu outside it
+window.addEventListener('resize', hideContextMenu)
 
 // ── Rename Modal ──────────────────────────────
 function showRenameModal(tile) {

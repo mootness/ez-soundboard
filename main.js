@@ -61,8 +61,10 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1000,
     height: 720,
-    minWidth: 800,
-    minHeight: 600,
+    // Small enough to fit Windows snap zones (halves, corners, thirds) even on a scaled
+    // 1080p laptop screen — a larger minimum makes a snapped window overflow its zone
+    minWidth: 480,
+    minHeight: 320,
     title: 'EZ Soundboard',
     backgroundColor: '#1a1a2e',
     webPreferences: {

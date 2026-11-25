@@ -25,6 +25,7 @@ Run `EZ-Soundboard-Setup-<version>.exe` — it installs for your user account (n
 - **Import folder** — Bulk-add all audio files from a folder in one click
 - **System tray** — Click the tray icon to hide or show the window; global hotkeys keep working while it's hidden
 - **Tile sizes** — Switch between Small / Medium / Large grid layouts
+- **Snaps anywhere** — Fits Windows snap positions (halves, corners, side strips); the layout compacts in small windows, and in short ones the search and output bar hides to leave room for tiles
 - **Search** — Filter tiles by name instantly
 - **Auto-updates** — New versions are offered in-app
 
