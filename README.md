@@ -10,7 +10,9 @@ A lightweight desktop soundboard app built with Electron. Assign audio clips to 
 
 **[⬇ Download latest release](https://github.com/Mootness/ez-soundboard/releases/latest)**
 
-Run `EZ-Soundboard-Setup-<version>.exe` — it installs for your user account (no admin needed). The app checks for updates when it starts and offers to install new versions.
+Run `EZ-Soundboard-Setup-<version>.exe` — it installs for your user account (no admin needed). The app checks for updates when it starts; one click on **Update now** downloads the update, installs it and reopens the app.
+
+The installer isn't code-signed, so Windows may show "Windows protected your PC" the first time — click **More info → Run anyway**.
 
 ---
 
@@ -27,7 +29,7 @@ Run `EZ-Soundboard-Setup-<version>.exe` — it installs for your user account (n
 - **Tile sizes** — Switch between Small / Medium / Large grid layouts
 - **Snaps anywhere** — Fits Windows snap positions (halves, corners, side strips); the layout compacts in small windows, and in short ones the search and output bar hides to leave room for tiles
 - **Search** — Filter tiles by name instantly
-- **Auto-updates** — New versions are offered in-app
+- **Auto-updates** — New versions are offered in the app and install with one click
 
 ---
 
@@ -74,7 +76,7 @@ npm run build:portable   # Single portable .exe that keeps its data next to itse
 npm run publish          # Build and publish a GitHub release (needs GH_TOKEN)
 ```
 
-Builds use `electron-builder`. The installer build also writes `dist/latest.yml`, which the in-app updater reads from the GitHub release.
+Builds use `electron-builder`. The installer build also writes `dist/latest.yml`, which the in-app updater reads from the GitHub release. `brand-exe.js` runs during the build to give the app's exe its own name, version and icon.
 
 ---
 
@@ -86,6 +88,19 @@ Your soundboard config (`soundboard.json`) is stored in:
 - **Portable build:** `EZSoundboard-data\` folder next to the exe
 
 Audio files aren't copied — tiles point to your files where they are, so keep them in place.
+
+Next to it, `soundboard.backup.json` is the board as it was the last time the app started. If `soundboard.json` is ever damaged, the app restores from that copy by itself and keeps the damaged file as `soundboard.damaged-<number>.json`.
+
+---
+
+## Troubleshooting Updates
+
+- **"Couldn't start the installer"** — Windows or your antivirus refused to run the downloaded update. Click **Download manually**, or get the latest installer from the [releases page](https://github.com/Mootness/ez-soundboard/releases/latest) and run it yourself. Your soundboard is kept.
+- **"The update didn't install"** — the installer started but the app is still on the old version, usually for the same reason. The manual download works here too.
+- **"Smart App Control blocked…"** — some Windows 11 PCs have Smart App Control turned on. It only lets code-signed apps install, EZ Soundboard isn't code-signed, and Windows offers no "run anyway" for it. Downloading the installer manually is blocked the same way. Your choices:
+  - **Keep the version you have.** It keeps working; you just don't get the update.
+  - **Turn Smart App Control off**: Windows Security → App & browser control → Smart App Control settings → Off, then update or install again. It is a real protection, so that's your decision. On Windows with the April 2026 update or newer it can be turned back on later; on older versions, turning it off is permanent until Windows is reset. If you turn it back on, it may block the app again.
+- **Asking for help** — **Help → Copy Diagnostic Info** copies the app version, whether Smart App Control is on, and the update log to the clipboard, ready to paste. The log itself is `%APPDATA%\ez-soundboard\updater.log`.
 
 ---
 

@@ -815,6 +815,9 @@ body {
   padding: 4px 12px;
   font-size: 12px;
   border-radius: 4px;
+  /* A long message wraps; the button beside it keeps its shape */
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .update-dismiss {
   margin-left: auto;

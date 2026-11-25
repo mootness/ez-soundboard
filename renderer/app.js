@@ -1214,6 +1214,8 @@ helpModal.addEventListener('click', (e) => {
 })
 // Open via native Help menu
 window.api.onOpenHelpModal(() => helpModal.classList.remove('hidden'))
+// Status-bar messages from the main process (e.g. Help > Copy Diagnostic Info)
+window.api.onShowInfo(setInfo)
 
 // ── Strip extension helper ────────────────────
 function stripExtension(filename) {
@@ -1232,7 +1234,7 @@ async function init() {
   renderPages()
   renderTiles()
   await populateAudioDevices()
-  setInfo('Ready — click a tile to play, right-click for options')
+  setInfo((await window.api.getStartupNotice()) || 'Ready — click a tile to play, right-click for options')
   syncGlobalHotkeys()
 }
 
@@ -1244,42 +1246,93 @@ init()
   const updateMessage = document.getElementById('updateMessage')
   const updateActionBtn = document.getElementById('updateActionBtn')
   const updateDismissBtn = document.getElementById('updateDismissBtn')
+  const RELEASES_URL = 'https://github.com/mootness/ez-soundboard/releases'
+  let hideTimer = null
+
+  // Shows a message in the update bar, with at most one action button; `hideAfter` (ms) is for
+  // messages that don't need the user to do anything
+  function show(message, { action, hideAfter } = {}) {
+    clearTimeout(hideTimer)
+    updateMessage.textContent = message
+    updateActionBtn.classList.toggle('hidden', !action)
+    if (action) {
+      updateActionBtn.textContent = action.label
+      updateActionBtn.onclick = action.run
+    }
+    updateBar.classList.remove('hidden')
+    if (hideAfter) hideTimer = setTimeout(() => updateBar.classList.add('hidden'), hideAfter)
+  }
+
+  // The way out when updating in the app isn't possible on this PC
+  const downloadManually = {
+    label: 'Download manually',
+    run: () => window.api.openExternal(`${RELEASES_URL}/latest`)
+  }
+  // With Smart App Control on, a manual download is blocked just the same, so explain instead
+  const smartAppControlHelp = {
+    label: 'What can I do?',
+    run: () => window.api.openExternal('https://github.com/mootness/ez-soundboard#troubleshooting-updates')
+  }
+  // Errors from the network layer can run to many lines of headers
+  const brief = (text) => String(text).split('\n')[0].slice(0, 140)
 
   window.api.onUpdaterStatus((data) => {
-    updateBar.classList.remove('hidden')
-    updateActionBtn.classList.add('hidden')
-
     switch (data.status) {
       case 'checking':
-        updateMessage.textContent = 'Checking for updates…'
+        show('Checking for updates…')
         break
       case 'available':
-        updateMessage.textContent = `Update available: v${data.version}`
-        updateActionBtn.textContent = 'Download'
-        updateActionBtn.classList.remove('hidden')
-        updateActionBtn.onclick = () => window.api.updaterDownload()
+        show(`Update available: v${data.version}`, {
+          action: {
+            label: 'Update now',
+            run: () => {
+              show('Downloading update…')
+              window.api.updaterDownload()
+            }
+          }
+        })
         break
       case 'not-available':
-        updateMessage.textContent = 'You\'re on the latest version.'
-        setTimeout(() => updateBar.classList.add('hidden'), 4000)
+        show('You\'re on the latest version.', { hideAfter: 4000 })
         break
       case 'downloading':
-        updateMessage.textContent = `Downloading update… ${data.percent}%`
+        show(`Downloading update… ${data.percent}%`)
         break
       case 'downloaded':
-        updateMessage.textContent = 'Update ready — restart to install.'
-        updateActionBtn.textContent = 'Restart'
-        updateActionBtn.classList.remove('hidden')
-        updateActionBtn.onclick = () => window.api.updaterInstall()
+        // Only after a slow download; a quick one goes straight to 'installing'
+        show(`v${data.version} is ready — restart to install it.`, {
+          action: { label: 'Restart', run: () => window.api.updaterInstall() }
+        })
+        break
+      case 'installing':
+        show(`Installing v${data.version} — the app will close and reopen in a few seconds…`)
+        break
+      case 'updated':
+        show(`Updated to v${data.version}.`, {
+          action: { label: 'What\'s new', run: () => window.api.openExternal(`${RELEASES_URL}/tag/v${data.version}`) },
+          hideAfter: 15000
+        })
+        break
+      case 'install-failed':
+        if (data.smartAppControl) {
+          show(`Windows Smart App Control blocked the v${data.version} update — it only lets code-signed apps install.`, { action: smartAppControlHelp })
+        } else {
+          show(data.reason
+            ? `Couldn't start the v${data.version} installer — Windows or your antivirus blocked it (${brief(data.reason)}).`
+            : `The update to v${data.version} didn't install.`, { action: downloadManually })
+        }
+        break
+      case 'download-failed':
+        show(`Couldn't download the update: ${brief(data.message)}`, { action: downloadManually })
         break
       case 'error':
-        updateMessage.textContent = `Update error: ${data.message}`
-        setTimeout(() => updateBar.classList.add('hidden'), 6000)
+        show(`Update error: ${brief(data.message)}`, { hideAfter: 6000 })
         break
     }
   })
 
   updateDismissBtn.addEventListener('click', () => {
+    clearTimeout(hideTimer)
     updateBar.classList.add('hidden')
   })
 })()

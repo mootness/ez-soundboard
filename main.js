@@ -1,7 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, globalShortcut } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, globalShortcut, clipboard } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const { initUpdater, checkForUpdates } = require('./updater')
+const { initUpdater, checkForUpdates, diagnosticInfo } = require('./updater')
 
 // When running as a portable exe (built with electron-builder portable target),
 // PORTABLE_EXECUTABLE_DIR is set to the directory containing the exe.
@@ -11,6 +11,8 @@ const DATA_DIR = process.env.PORTABLE_EXECUTABLE_DIR
   : app.getPath('userData')
 
 const CONFIG_PATH = path.join(DATA_DIR, 'soundboard.json')
+// The board as it was the last time the app started with a readable file
+const CONFIG_BACKUP_PATH = path.join(DATA_DIR, 'soundboard.backup.json')
 
 // File types Chromium can play the sound of — video files play their audio track.
 // Keep in sync with MEDIA_EXTS in renderer/app.js.
@@ -21,6 +23,8 @@ const MEDIA_EXTS = [
 
 let mainWindow
 let tray
+// Something the user should be told once the window is up (e.g. the board was restored)
+let startupNotice = null
 
 function ensureDirectories() {
   fs.mkdirSync(DATA_DIR, { recursive: true })
@@ -35,21 +39,58 @@ function defaultConfig() {
   }
 }
 
+// Reads the board. A damaged file (say the PC lost power mid-save) used to load as an empty
+// board, and the first change then saved that empty board over it. Now the damaged file is set
+// aside and the copy kept from the last good start is used instead.
 function readConfig() {
+  if (!fs.existsSync(CONFIG_PATH) && !fs.existsSync(CONFIG_BACKUP_PATH)) return defaultConfig() // first run
+
   try {
-    if (fs.existsSync(CONFIG_PATH)) {
-      const raw = fs.readFileSync(CONFIG_PATH, 'utf-8')
-      return JSON.parse(raw)
+    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'))
+    try {
+      fs.copyFileSync(CONFIG_PATH, CONFIG_BACKUP_PATH)
+    } catch (e) {
+      console.error('Failed to back up config:', e)
     }
+    return config
   } catch (e) {
     console.error('Failed to read config:', e)
   }
+
+  try {
+    // Keep the unreadable file rather than delete it — it may still be recoverable by hand
+    if (fs.existsSync(CONFIG_PATH)) {
+      fs.renameSync(CONFIG_PATH, path.join(DATA_DIR, `soundboard.damaged-${Date.now()}.json`))
+    }
+  } catch (e) {
+    console.error('Failed to set the damaged config aside:', e)
+  }
+  try {
+    const config = JSON.parse(fs.readFileSync(CONFIG_BACKUP_PATH, 'utf-8'))
+    writeConfig(config)
+    startupNotice = 'Your soundboard file was missing or damaged — restored it from the last time the app started'
+    return config
+  } catch (e) {
+    console.error('Failed to restore config from backup:', e)
+  }
+  startupNotice = 'Your soundboard file was damaged and could not be restored — starting with an empty board'
   return defaultConfig()
 }
 
 function writeConfig(config) {
+  const json = JSON.stringify(config, null, 2)
   try {
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8')
+    // Write beside the real file and swap it in, so a crash mid-save can't leave half a board
+    const tempPath = CONFIG_PATH + '.tmp'
+    fs.writeFileSync(tempPath, json, 'utf-8')
+    fs.renameSync(tempPath, CONFIG_PATH)
+    return true
+  } catch (e) {
+    console.error('Failed to save config with a swap, writing it directly:', e)
+  }
+  try {
+    // The swap can be refused while something else (antivirus, a sync client) holds the file
+    fs.writeFileSync(CONFIG_PATH, json, 'utf-8')
     return true
   } catch (e) {
     console.error('Failed to write config:', e)
@@ -153,6 +194,13 @@ ipcMain.handle('config:read', () => readConfig())
 
 ipcMain.handle('config:write', (_, config) => writeConfig(config))
 
+// Handed over once: shown in the status bar in place of the usual "Ready" message
+ipcMain.handle('config:startupNotice', () => {
+  const notice = startupNotice
+  startupNotice = null
+  return notice
+})
+
 ipcMain.handle('shell:showInFolder', (_, filePath) => {
   if (filePath && fs.existsSync(filePath)) {
     shell.showItemInFolder(filePath)
@@ -250,6 +298,14 @@ function createAppMenu() {
         {
           label: 'Check for Updates…',
           click: () => checkForUpdates()
+        },
+        {
+          // For support: the user pastes this wherever they're asking for help
+          label: 'Copy Diagnostic Info',
+          click: () => {
+            clipboard.writeText(diagnosticInfo())
+            mainWindow?.webContents.send('show-info', 'Diagnostic info copied — paste it into your message')
+          }
         },
         { type: 'separator' },
         {
