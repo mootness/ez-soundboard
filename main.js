@@ -1,7 +1,7 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, globalShortcut } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, globalShortcut, clipboard } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const { initUpdater, checkForUpdates } = require('./updater')
+const { initUpdater, checkForUpdates, diagnosticInfo } = require('./updater')
 
 // When running as a portable exe (built with electron-builder portable target),
 // PORTABLE_EXECUTABLE_DIR is set to the directory containing the exe.
@@ -250,6 +250,14 @@ function createAppMenu() {
         {
           label: 'Check for Updates…',
           click: () => checkForUpdates()
+        },
+        {
+          // For support: the user pastes this wherever they're asking for help
+          label: 'Copy Diagnostic Info',
+          click: () => {
+            clipboard.writeText(diagnosticInfo())
+            mainWindow?.webContents.send('show-info', 'Diagnostic info copied — paste it into your message')
+          }
         },
         { type: 'separator' },
         {

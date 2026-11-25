@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('api', {
   writeConfig: (config) => ipcRenderer.invoke('config:write', config),
   showInFolder: (filePath) => ipcRenderer.invoke('shell:showInFolder', filePath),
   onOpenHelpModal: (cb) => ipcRenderer.on('open-help-modal', cb),
+  onShowInfo: (cb) => ipcRenderer.on('show-info', (_, message) => cb(message)),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   setGlobalHotkeys: (hotkeys) => ipcRenderer.invoke('hotkeys:set', hotkeys),
   onGlobalHotkey: (cb) => ipcRenderer.on('hotkeys:triggered', (_, shortcut) => cb(shortcut)),
