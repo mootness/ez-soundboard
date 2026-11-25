@@ -97,7 +97,10 @@ Next to it, `soundboard.backup.json` is the board as it was the last time the ap
 
 - **"Couldn't start the installer"** — Windows or your antivirus refused to run the downloaded update. Click **Download manually**, or get the latest installer from the [releases page](https://github.com/Mootness/ez-soundboard/releases/latest) and run it yourself. Your soundboard is kept.
 - **"The update didn't install"** — the installer started but the app is still on the old version, usually for the same reason. The manual download works here too.
-- **Asking for help** — **Help → Copy Diagnostic Info** copies the app version and its update log to the clipboard, ready to paste. The log itself is `%APPDATA%\ez-soundboard\updater.log`.
+- **"Smart App Control blocked…"** — some Windows 11 PCs have Smart App Control turned on. It only lets code-signed apps install, EZ Soundboard isn't code-signed, and Windows offers no "run anyway" for it. Downloading the installer manually is blocked the same way. Your choices:
+  - **Keep the version you have.** It keeps working; you just don't get the update.
+  - **Turn Smart App Control off**: Windows Security → App & browser control → Smart App Control settings → Off, then update or install again. It is a real protection, so that's your decision. On Windows with the April 2026 update or newer it can be turned back on later; on older versions, turning it off is permanent until Windows is reset. If you turn it back on, it may block the app again.
+- **Asking for help** — **Help → Copy Diagnostic Info** copies the app version, whether Smart App Control is on, and the update log to the clipboard, ready to paste. The log itself is `%APPDATA%\ez-soundboard\updater.log`.
 
 ---
 

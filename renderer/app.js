@@ -1268,6 +1268,11 @@ init()
     label: 'Download manually',
     run: () => window.api.openExternal(`${RELEASES_URL}/latest`)
   }
+  // With Smart App Control on, a manual download is blocked just the same, so explain instead
+  const smartAppControlHelp = {
+    label: 'What can I do?',
+    run: () => window.api.openExternal('https://github.com/mootness/ez-soundboard#troubleshooting-updates')
+  }
   // Errors from the network layer can run to many lines of headers
   const brief = (text) => String(text).split('\n')[0].slice(0, 140)
 
@@ -1309,9 +1314,13 @@ init()
         })
         break
       case 'install-failed':
-        show(data.reason
-          ? `Couldn't start the v${data.version} installer — Windows or your antivirus blocked it (${brief(data.reason)}).`
-          : `The update to v${data.version} didn't install.`, { action: downloadManually })
+        if (data.smartAppControl) {
+          show(`Windows Smart App Control blocked the v${data.version} update — it only lets code-signed apps install.`, { action: smartAppControlHelp })
+        } else {
+          show(data.reason
+            ? `Couldn't start the v${data.version} installer — Windows or your antivirus blocked it (${brief(data.reason)}).`
+            : `The update to v${data.version} didn't install.`, { action: downloadManually })
+        }
         break
       case 'download-failed':
         show(`Couldn't download the update: ${brief(data.message)}`, { action: downloadManually })

@@ -1,6 +1,6 @@
 const { autoUpdater } = require('electron-updater')
 const { app, ipcMain } = require('electron')
-const { spawn } = require('child_process')
+const { spawn, execFile } = require('child_process')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -22,9 +22,31 @@ let userRequested = false
 let downloadStartedAt = 0 // non-zero while a download is in progress
 let downloaded = null     // { file, version } once an update is ready to install
 let installing = false
+// 'on' | 'evaluation' | 'off' | 'unknown'. When it's on, Windows refuses to run an installer
+// that isn't code-signed, with no "Run anyway", so a failed update gets its own explanation.
+let smartAppControl = 'unknown'
 
 function isDev() {
   return !app.isPackaged
+}
+
+// The value Windows Security's own Smart App Control page reflects: 0 off, 1 on, 2 evaluation
+function parseSmartAppControl(regOutput) {
+  const value = /VerifiedAndReputablePolicyState\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(regOutput || '')
+  return value ? (['off', 'on', 'evaluation'][parseInt(value[1], 16)] ?? 'unknown') : 'unknown'
+}
+
+// Resolves once smartAppControl is set; never rejects
+function readSmartAppControl() {
+  return new Promise((resolve) => {
+    const reg = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe')
+    const args = ['query', 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\CI\\Policy', '/v', 'VerifiedAndReputablePolicyState']
+    execFile(reg, args, { windowsHide: true }, (err, stdout) => {
+      smartAppControl = parseSmartAppControl(stdout)
+      log('info', `Smart App Control: ${smartAppControl}`)
+      resolve()
+    })
+  })
 }
 
 // The updater's messages used to go to a console nobody sees. They're kept in a file so a failed
@@ -69,7 +91,7 @@ function reportLastUpdate() {
 
   if (pending?.from === current) {
     log('error', `the update to ${pending.version} did not install; still on ${current}`)
-    sendStatus('install-failed', { version: pending.version })
+    sendStatus('install-failed', { version: pending.version, smartAppControl: smartAppControl === 'on' })
     return true
   }
   // The installer passes --updated when it reopens the app, including after an update that
@@ -94,7 +116,7 @@ function installUpdate() {
     installing = false
     fs.rmSync(PENDING_PATH, { force: true })
     log('error', `could not start the installer ${file}:`, err)
-    sendStatus('install-failed', { version, reason: err.code || err.message })
+    sendStatus('install-failed', { version, reason: err.code || err.message, smartAppControl: smartAppControl === 'on' })
   }
 
   try {
@@ -116,6 +138,7 @@ function installUpdate() {
 function initUpdater(win) {
   mainWindow = win
   startLog()
+  const smartAppControlRead = readSmartAppControl()
 
   autoUpdater.logger = {
     info: (message) => log('info', message),
@@ -178,7 +201,8 @@ function initUpdater(win) {
 
   if (!isDev()) {
     // Once the UI can show the update bar: say how the last update went, then look for a new one
-    win.webContents.once('did-finish-load', () => {
+    win.webContents.once('did-finish-load', async () => {
+      await smartAppControlRead // the report's wording depends on it
       const lastUpdateFailed = reportLastUpdate()
       // After a failed install, leave its message (and manual download link) on screen instead
       // of replacing it at once with the same "update available" offer
@@ -218,6 +242,7 @@ function diagnosticInfo() {
   const info = [
     `EZ Soundboard ${app.getVersion()} (Electron ${process.versions.electron}, ${process.arch})`,
     `Windows ${os.release()}`,
+    `Smart App Control: ${smartAppControl}`,
     `Installed in: ${path.dirname(app.getPath('exe'))}`,
     '',
     'Update log:',
