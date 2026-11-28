@@ -14,10 +14,15 @@
       <span class="app-title">&#127932; EZ Soundboard</span>
     </div>
     <div class="header-center">
-      <div class="master-volume">
+      <div class="master-volume" title="Volume of every clip — what Discord hears and what you hear">
         <label for="masterVolume">Master</label>
         <input type="range" id="masterVolume" min="0" max="200" value="100" />
         <span id="masterVolumeValue">100%</span>
+      </div>
+      <div class="master-volume" id="monitorVolumeGroup" title="How loud clips are in your Monitor (your headphones) — Discord isn't affected">
+        <label for="monitorVolume">Monitor</label>
+        <input type="range" id="monitorVolume" min="0" max="200" value="100" />
+        <span id="monitorVolumeValue">100%</span>
       </div>
     </div>
     <div class="header-right">

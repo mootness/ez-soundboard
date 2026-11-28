@@ -23,6 +23,9 @@ const audioEngine = (() => {
   // the microphone; "monitor" goes to the user's own headphones and carries clips only.
   const buses = { main: null, monitor: null }
   const sinks = { main: '', monitor: null }   // device ids: '' = system default, null = off
+  // Per-output volume on top of everything else: the monitor's lets the user hear clips
+  // quieter (or louder) than Discord does. The main output's stays at 1.
+  const volumes = { main: 1, monitor: 1 }
   let master = 1
 
   // Linear up to 0.9, then eases into a ceiling just under full scale
@@ -53,7 +56,7 @@ const audioEngine = (() => {
     return { input: limiter, output: clipper }
   }
 
-  function createBus(sinkId) {
+  function createBus(name, sinkId) {
     let ctx
     try {
       ctx = new AudioContext({ latencyHint: 'interactive', sinkId })
@@ -64,22 +67,25 @@ const audioEngine = (() => {
     const clips = ctx.createGain()   // every clip, at the master volume
     clips.gain.value = master
     const mix = ctx.createGain()     // clips + microphone
+    const volume = ctx.createGain()  // this output's own volume (before the limiter, so it's protected too)
+    volume.gain.value = volumes[name]
     const limit = buildLimiter(ctx)
     const meter = ctx.createAnalyser()
     meter.fftSize = 2048
     clips.connect(mix)
-    mix.connect(limit.input)
+    mix.connect(volume)
+    volume.connect(limit.input)
     limit.output.connect(ctx.destination)
     limit.output.connect(meter)
     ctx.resume().catch(() => {})
-    return { ctx, clips, mix, meter }
+    return { ctx, clips, mix, volume, meter }
   }
 
   // An output's bus, created on first use; null when the monitor is off or would only
   // duplicate the main output
   function bus(name) {
     if (name === 'monitor' && (sinks.monitor == null || sinks.monitor === sinks.main)) return null
-    if (!buses[name]) buses[name] = createBus(sinks[name])
+    if (!buses[name]) buses[name] = createBus(name, sinks[name])
     return buses[name]
   }
 
@@ -115,6 +121,13 @@ const audioEngine = (() => {
     for (const b of Object.values(buses)) {
       if (b) b.clips.gain.setTargetAtTime(gain, b.ctx.currentTime, 0.015)
     }
+  }
+
+  // One output's own volume, e.g. how loud the user hears clips on the monitor
+  function setOutputVolume(name, gain) {
+    volumes[name] = gain
+    const b = buses[name]
+    if (b) b.volume.gain.setTargetAtTime(gain, b.ctx.currentTime, 0.015)
   }
 
   // ── Clips ──────────────────────────────────
@@ -244,9 +257,9 @@ const audioEngine = (() => {
     return gainToDb(peak)
   }
 
-  // Current peak levels (dBFS): what leaves the main output, and the microphone
+  // Current peak levels (dBFS): what leaves the main output and the monitor, and the microphone
   function levels() {
-    return { output: peakDb(buses.main?.meter), mic: peakDb(mic.meter) }
+    return { output: peakDb(buses.main?.meter), monitor: peakDb(buses.monitor?.meter), mic: peakDb(mic.meter) }
   }
 
   // ── Loudness ───────────────────────────────
@@ -340,7 +353,7 @@ const audioEngine = (() => {
   }
 
   return {
-    play, playTestTone, setMaster, setOutput,
+    play, playTestTone, setMaster, setOutput, setOutputVolume,
     startMic, stopMic, setMicVolume, micActive: () => !!mic.stream,
     levels, measure, levelDb, dbToGain, buildLimiter, loudnessOf, MAX_MEASURE_SECONDS
   }

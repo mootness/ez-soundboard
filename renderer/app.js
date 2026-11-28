@@ -26,6 +26,7 @@ let config = { pages: [], settings: { masterVolume: 1.0 } }
 let currentPageIndex = 0
 let activeAudio = new Map()   // tileId → playing clip (audioEngine.play handle)
 let masterVolume = 1.0
+let monitorVolume = 1.0       // how loud the user hears clips on the Monitor (Discord unaffected)
 let autoLevel = true          // even out clip volumes (see Auto-level)
 // Microphone passthrough settings; `enabled` is what the user chose, audioEngine.micActive()
 // whether it is actually running
@@ -51,6 +52,9 @@ const stopAllBtn   = document.getElementById('stopAllBtn')
 const importFolderBtn = document.getElementById('importFolderBtn')
 const masterVolumeSlider = document.getElementById('masterVolume')
 const masterVolumeValue  = document.getElementById('masterVolumeValue')
+const monitorVolumeGroup  = document.getElementById('monitorVolumeGroup')
+const monitorVolumeSlider = document.getElementById('monitorVolume')
+const monitorVolumeValue  = document.getElementById('monitorVolumeValue')
 const infoText     = document.getElementById('infoText')
 
 const contextMenu  = document.getElementById('contextMenu')
@@ -141,6 +145,9 @@ async function loadConfig() {
     masterVolume = config.settings?.masterVolume ?? 1.0
     masterVolumeSlider.value = Math.round(masterVolume * 100)
     masterVolumeValue.textContent = masterVolumeSlider.value + '%'
+    monitorVolume = config.settings?.monitorVolume ?? 1.0
+    monitorVolumeSlider.value = Math.round(monitorVolume * 100)
+    monitorVolumeValue.textContent = monitorVolumeSlider.value + '%'
     currentTileSize = config.settings?.tileSize ?? 'medium'
     tileGrid.dataset.size = currentTileSize
     selectedSinkId = config.settings?.audioOutputDeviceId ?? ''
@@ -562,13 +569,29 @@ function stopAll() {
   setInfo('All sounds stopped')
 }
 
-// ── Master Volume ─────────────────────────────
+// ── Master & Monitor Volume ───────────────────
 masterVolumeSlider.addEventListener('input', () => {
   masterVolume = masterVolumeSlider.value / 100
   masterVolumeValue.textContent = masterVolumeSlider.value + '%'
   audioEngine.setMaster(masterVolume)
   saveConfig()
 })
+
+// Only what the user hears: the Monitor output, on top of the master volume
+monitorVolumeSlider.addEventListener('input', () => {
+  monitorVolume = monitorVolumeSlider.value / 100
+  monitorVolumeValue.textContent = monitorVolumeSlider.value + '%'
+  audioEngine.setOutputVolume('monitor', monitorVolume)
+  config.settings.monitorVolume = monitorVolume
+  saveConfig()
+})
+
+// The Monitor volume only applies while a Monitor device is on (and not the Output itself)
+function updateMonitorVolumeState() {
+  const active = !!monitorSinkId && monitorSinkId !== selectedSinkId
+  monitorVolumeSlider.disabled = !active
+  monitorVolumeGroup.classList.toggle('disabled', !active)
+}
 
 // ── Auto-level ────────────────────────────────
 // Each clip's loudness is measured once, in the background, and kept on the tile as
@@ -1491,6 +1514,7 @@ function setupStatus() {
 }
 
 function refreshSetup() {
+  updateMonitorVolumeState()
   const { rows, needsAttention } = setupStatus()
   // A dot on the help button when the cable is installed but not used
   helpBtn.classList.toggle('attention', needsAttention)
@@ -1596,6 +1620,7 @@ async function init() {
   audioEngine.setMaster(masterVolume)
   audioEngine.setOutput('main', selectedSinkId)
   audioEngine.setOutput('monitor', monitorSinkId || null)
+  audioEngine.setOutputVolume('monitor', monitorVolume)
   renderPages()
   renderTiles()
   await populateAudioDevices()
