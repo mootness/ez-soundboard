@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, globalShortcut, clipboard } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { spawn, execFile } = require('child_process')
 const { initUpdater, checkForUpdates, diagnosticInfo } = require('./updater')
 
 // When running as a portable exe (built with electron-builder portable target),
@@ -209,6 +210,52 @@ ipcMain.handle('shell:showInFolder', (_, filePath) => {
 
 ipcMain.handle('shell:openExternal', (_, url) => {
   shell.openExternal(url)
+})
+
+// ── Auto-level support: the renderer measures a clip's loudness from its file bytes ──
+const isMediaFile = (filePath) => typeof filePath === 'string' && MEDIA_EXTS.includes(path.extname(filePath).slice(1).toLowerCase())
+
+// Size and modified time, so a changed file is measured again; null if missing
+ipcMain.handle('media:stat', async (_, filePath) => {
+  if (!isMediaFile(filePath)) return null
+  try {
+    const stat = await fs.promises.stat(filePath)
+    return { size: stat.size, mtimeMs: stat.mtimeMs }
+  } catch {
+    return null
+  }
+})
+
+// Video files can be large; past this, a clip plays unlevelled rather than being read whole
+const MEDIA_READ_MAX_BYTES = 200 * 1024 * 1024
+ipcMain.handle('media:read', async (_, filePath) => {
+  if (!isMediaFile(filePath)) return { error: 'unsupported' }
+  try {
+    const { size } = await fs.promises.stat(filePath)
+    if (size > MEDIA_READ_MAX_BYTES) return { error: 'too-large' }
+    return { bytes: await fs.promises.readFile(filePath) }
+  } catch {
+    return { error: 'unreadable' }
+  }
+})
+
+// ── Discord setup checks ──
+// Windows' "When Windows detects communications activity" setting (Sound control panel →
+// Communications): by default it turns other sounds down 80% during calls, which can include
+// the soundboard. Resolves 'mute' | 'reduce80' | 'reduce50' | 'off', or 'unknown'.
+ipcMain.handle('system:callDucking', () => new Promise((resolve) => {
+  const reg = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe')
+  execFile(reg, ['query', 'HKCU\\Software\\Microsoft\\Multimedia\\Audio', '/v', 'UserDuckingPreference'], { windowsHide: true }, (err, stdout) => {
+    const value = /UserDuckingPreference\s+REG_DWORD\s+0x([0-9a-f]+)/i.exec(stdout || '')
+    // Missing means it was never changed: Windows' default, 80%
+    if (!value) return resolve(err?.code === 1 ? 'reduce80' : 'unknown')
+    resolve(['mute', 'reduce80', 'reduce50', 'off'][parseInt(value[1], 16)] ?? 'unknown')
+  })
+}))
+
+// Opens the classic Sound control panel on its Communications tab
+ipcMain.handle('system:openSoundSettings', () => {
+  spawn(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'control.exe'), ['mmsys.cpl,,3'], { detached: true, stdio: 'ignore' }).unref()
 })
 
 // Windows re-sends a global hotkey while it's held (key auto-repeat), which would toggle the

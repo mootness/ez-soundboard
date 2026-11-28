@@ -24,9 +24,12 @@ function getTilesPerPage() {
 // ── State ─────────────────────────────────────
 let config = { pages: [], settings: { masterVolume: 1.0 } }
 let currentPageIndex = 0
-let activeAudio = new Map()   // tileId → HTMLAudioElement (primary output)
-let activeMonitor = new Map() // tileId → HTMLAudioElement (monitor output)
+let activeAudio = new Map()   // tileId → playing clip (audioEngine.play handle)
 let masterVolume = 1.0
+let autoLevel = true          // even out clip volumes (see Auto-level)
+// Microphone passthrough settings; `enabled` is what the user chose, audioEngine.micActive()
+// whether it is actually running
+let micSettings = { enabled: false, deviceId: '', volume: 1, noiseSuppression: true }
 let currentTileSize = 'medium'
 let selectedSinkId = ''
 let monitorSinkId = ''
@@ -79,6 +82,19 @@ const helpBtn   = document.getElementById('helpBtn')
 const helpModal = document.getElementById('helpModal')
 const helpCloseBtn = document.getElementById('helpCloseBtn')
 
+const micBtn         = document.getElementById('micBtn')
+const ctxLevelInfo   = document.getElementById('ctxLevelInfo')
+const setupChecks    = document.getElementById('setupChecks')
+const micEnabledBox  = document.getElementById('micEnabled')
+const micDeviceSelect = document.getElementById('micDevice')
+const micVolumeSlider = document.getElementById('micVolume')
+const micVolumeValue = document.getElementById('micVolumeValue')
+const micNoiseBox    = document.getElementById('micNoise')
+const micMeter       = document.getElementById('micMeter')
+const autoLevelBox   = document.getElementById('autoLevel')
+const outMeter       = document.getElementById('outMeter')
+const testToneBtn    = document.getElementById('testToneBtn')
+
 const renameModal  = document.getElementById('renameModal')
 const renameInput  = document.getElementById('renameInput')
 const renameCancelBtn  = document.getElementById('renameCancelBtn')
@@ -130,6 +146,8 @@ async function loadConfig() {
     selectedSinkId = config.settings?.audioOutputDeviceId ?? ''
     monitorSinkId  = config.settings?.monitorOutputDeviceId ?? ''
     globalHotkeys  = config.settings?.globalHotkeys ?? false
+    autoLevel      = config.settings?.autoLevel ?? true
+    micSettings    = { ...micSettings, ...config.settings?.mic }
   } catch (e) {
     console.error('Failed to load config:', e)
   }
@@ -287,7 +305,7 @@ function buildTileEl(tile, slot, pageIdx = currentPageIndex) {
   volSlider.type = 'range'
   volSlider.className = 'tile-vol-slider'
   volSlider.min = 0
-  volSlider.max = 100
+  volSlider.max = 200
   volSlider.value = Math.round((tile.volume ?? 1.0) * 100)
   volSlider.title = `Volume: ${volSlider.value}%`
   // Prevent slider interaction from triggering tile play or tile drag
@@ -299,9 +317,7 @@ function buildTileEl(tile, slot, pageIdx = currentPageIndex) {
     tile.volume = volSlider.value / 100
     volSlider.title = `Volume: ${volSlider.value}%`
     saveConfig()
-    const liveVol = Math.min(1, tile.volume * masterVolume)
-    if (activeAudio.has(tile.id))   activeAudio.get(tile.id).volume = liveVol
-    if (activeMonitor.has(tile.id)) activeMonitor.get(tile.id).volume = liveVol
+    activeAudio.get(tile.id)?.setGain(clipGain(tile))
     // Keep context menu in sync if open for this tile
     if (ctxTileId === tile.id) {
       ctxVolume.value = volSlider.value
@@ -366,8 +382,10 @@ function buildTileEl(tile, slot, pageIdx = currentPageIndex) {
       if (MEDIA_EXTS.includes(ext)) {
         tile.file = window.api.getPathForFile(file)
         tile.label = tile.label || stripExtension(file.name)
+        delete tile.level
         saveConfig()
         renderTiles()
+        queueLevel(tile, { urgent: true })
       }
     }
   })
@@ -433,17 +451,19 @@ function createTileInSlot(slot, label, filePath, extra = {}) {
   const page = getPage()
   // Remove any existing tile at that slot
   page.tiles = page.tiles.filter(t => t.slot !== slot)
-  page.tiles.push({
+  const tile = {
     id: generateId(),
     slot,
     label: label || 'Untitled',
     file: filePath,
     color: extra.color || 'default',
     volume: extra.volume ?? 1.0
-  })
+  }
+  page.tiles.push(tile)
   saveConfig()
   renderTiles()
   setInfo(`Added: ${label}`)
+  queueLevel(tile, { urgent: true })
 }
 
 function swapTiles(slotA, slotB) {
@@ -469,80 +489,65 @@ function moveTileToSlot(fromSlot, toSlot) {
 }
 
 // ── Audio Playback ────────────────────────────
+// Clips play through audioEngine (audio.js), which sends each one to the Output device and
+// the Monitor, with the volumes below and a limiter.
+
 // Stops a tile on both the primary and monitor outputs
 function stopTileAudio(tileId) {
-  for (const players of [activeAudio, activeMonitor]) {
-    const audio = players.get(tileId)
-    if (!audio) continue
-    audio.pause()
-    audio.currentTime = 0
-    players.delete(tileId)
-  }
+  activeAudio.get(tileId)?.stop()
+  activeAudio.delete(tileId)
   updateTilePlayingState(tileId, false)
 }
 
-async function playOrStopTile(tile) {
+// A clip's volume: its auto-level adjustment times its own volume (the master volume applies
+// on top, in the engine)
+function clipGain(tile) {
+  return levelGain(tile) * (tile.volume ?? 1.0)
+}
+
+function playOrStopTile(tile) {
   if (activeAudio.has(tile.id)) {
     stopTileAudio(tile.id)
     setInfo(`Stopped: ${tile.label}`)
-  } else {
-    // Play
-    if (!tile.file) {
-      setInfo('No file assigned to this tile')
-      return
-    }
-    const audio = new Audio(tile.file)
-    const effectiveVolume = (tile.volume ?? 1.0) * masterVolume
-    audio.volume = Math.min(1, Math.max(0, effectiveVolume))
-
-    // Route to selected output device if supported
-    if (selectedSinkId && typeof audio.setSinkId === 'function') {
-      try { await audio.setSinkId(selectedSinkId) } catch (e) {
-        console.warn('setSinkId failed:', e)
-      }
-    }
-
-    audio.play().catch(err => {
-      setInfo(err.name === 'NotSupportedError'
-        ? `Can't play "${tile.label}" — the file is missing or its format isn't supported`
-        : `Error playing: ${err.message}`)
-      activeAudio.delete(tile.id)
-      updateTilePlayingState(tile.id, false)
-    })
-    activeAudio.set(tile.id, audio)
-    updateTilePlayingState(tile.id, true)
-    setInfo(`Playing: ${tile.label}`)
-
-    audio.addEventListener('ended', () => {
-      activeAudio.delete(tile.id)
-      updateTilePlayingState(tile.id, false)
-    })
-
-    // A video can play with no sound when it has no audio track, or one Chromium can't
-    // decode (e.g. AC3/DTS in .mkv) — stop it and say so instead of "playing" silently
-    audio.addEventListener('playing', () => {
-      setTimeout(() => {
-        if (activeAudio.get(tile.id) === audio && audio.webkitAudioDecodedByteCount === 0) {
-          stopTileAudio(tile.id)
-          setInfo(`No playable sound in "${tile.label}" — its audio track is missing or in an unsupported format`)
-        }
-      }, 1000)
-    }, { once: true })
-
-    // Monitor output — play a second instance to a different device so you hear it locally
-    if (monitorSinkId && monitorSinkId !== selectedSinkId) {
-      const mon = new Audio(tile.file)
-      mon.volume = Math.min(1, Math.max(0, effectiveVolume))
-      if (typeof mon.setSinkId === 'function') {
-        try { await mon.setSinkId(monitorSinkId) } catch (e) {
-          console.warn('Monitor setSinkId failed:', e)
-        }
-      }
-      mon.play().catch(() => {})
-      activeMonitor.set(tile.id, mon)
-      mon.addEventListener('ended', () => activeMonitor.delete(tile.id))
-    }
+    return
   }
+  if (!tile.file) {
+    setInfo('No file assigned to this tile')
+    return
+  }
+  // Not measured yet: plays unlevelled this once, and is measured next
+  if (!tile.level) queueLevel(tile, { urgent: true })
+
+  const handle = audioEngine.play(tile.file, clipGain(tile))
+  const audio = handle.element
+  // Cleans up — unless the tile has been stopped and played again since
+  const finish = () => {
+    if (activeAudio.get(tile.id) === handle) stopTileAudio(tile.id)
+    else handle.stop()
+  }
+  handle.start().catch(err => {
+    if (err.name === 'AbortError') return // stopped before it started
+    finish()
+    setInfo(err.name === 'NotSupportedError'
+      ? `Can't play "${tile.label}" — the file is missing or its format isn't supported`
+      : `Error playing: ${err.message}`)
+  })
+  activeAudio.set(tile.id, handle)
+  updateTilePlayingState(tile.id, true)
+  setInfo(`Playing: ${tile.label}`)
+
+  audio.addEventListener('ended', finish)
+
+  // A video can play with no sound when it has no audio track, or one Chromium can't
+  // decode (e.g. AC3/DTS in .mkv) — stop it and say so instead of "playing" silently
+  audio.addEventListener('playing', () => {
+    setTimeout(() => {
+      if (activeAudio.get(tile.id) === handle && audio.webkitAudioDecodedByteCount === 0) {
+        stopTileAudio(tile.id)
+        setInfo(`No playable sound in "${tile.label}" — its audio track is missing or in an unsupported format`)
+      }
+    }, 1000)
+  }, { once: true })
 }
 
 function updateTilePlayingState(tileId, playing) {
@@ -553,14 +558,7 @@ function updateTilePlayingState(tileId, playing) {
 }
 
 function stopAll() {
-  activeAudio.forEach((audio, tileId) => {
-    audio.pause()
-    audio.currentTime = 0
-    updateTilePlayingState(tileId, false)
-  })
-  activeAudio.clear()
-  activeMonitor.forEach(mon => { mon.pause(); mon.currentTime = 0 })
-  activeMonitor.clear()
+  for (const tileId of [...activeAudio.keys()]) stopTileAudio(tileId)
   setInfo('All sounds stopped')
 }
 
@@ -568,16 +566,131 @@ function stopAll() {
 masterVolumeSlider.addEventListener('input', () => {
   masterVolume = masterVolumeSlider.value / 100
   masterVolumeValue.textContent = masterVolumeSlider.value + '%'
-  // Update all currently playing audio (primary + monitor)
-  const updateVol = (audio, tileId) => {
-    const page = config.pages.find(p => p.tiles.some(t => t.id === tileId))
-    const tile = page?.tiles.find(t => t.id === tileId)
-    audio.volume = Math.min(1, Math.max(0, (tile?.volume ?? 1.0) * masterVolume))
-  }
-  activeAudio.forEach(updateVol)
-  activeMonitor.forEach(updateVol)
+  audioEngine.setMaster(masterVolume)
   saveConfig()
 })
+
+// ── Auto-level ────────────────────────────────
+// Each clip's loudness is measured once, in the background, and kept on the tile as
+// tile.level = { lufs, peak, file }, where `file` identifies the measured version of the file
+// (size and modified time) so a changed file is measured again. A clip that can't be measured
+// keeps { error, file } instead and plays unlevelled.
+const levelQueue = []
+let levelRunning = false
+
+// Linear gain that brings a tile's clip to the common loudness (1 when off or not measured)
+function levelGain(tile) {
+  if (!autoLevel || !tile.level || tile.level.error) return 1
+  return audioEngine.dbToGain(audioEngine.levelDb(tile.level))
+}
+
+function queueLevel(tile, { urgent = false } = {}) {
+  if (!tile.file) return
+  const queued = levelQueue.indexOf(tile)
+  if (queued >= 0) {
+    if (!urgent) return
+    levelQueue.splice(queued, 1)
+  }
+  if (urgent) levelQueue.unshift(tile)
+  else levelQueue.push(tile)
+  runLevelQueue()
+}
+
+// A clip's length in seconds from its metadata: NaN if it can't be read, Infinity if unknown
+function mediaDuration(file) {
+  return new Promise((resolve) => {
+    const el = new Audio()
+    let settled = false
+    const done = (value) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      el.removeAttribute('src')
+      el.load()
+      resolve(value)
+    }
+    const timer = setTimeout(() => done(NaN), 10000)
+    el.preload = 'metadata'
+    el.addEventListener('loadedmetadata', () => done(el.duration), { once: true })
+    el.addEventListener('error', () => done(NaN), { once: true })
+    el.src = file
+  })
+}
+
+// Measures a tile's clip unless the same file was measured before. Resolves true if
+// tile.level changed.
+async function measureTile(tile) {
+  const file = tile.file
+  const stat = await window.api.statMedia(file)
+  if (!stat) {
+    if (tile.level?.error === 'missing') return false
+    tile.level = { error: 'missing' } // measured again once the file is back
+    return true
+  }
+  const fingerprint = `${stat.size}:${Math.round(stat.mtimeMs)}`
+  if (tile.level?.file === fingerprint) return false
+
+  let level
+  const duration = await mediaDuration(file)
+  if (Number.isNaN(duration)) {
+    level = { error: 'unreadable' }
+  } else if (duration > audioEngine.MAX_MEASURE_SECONDS) {
+    level = { error: 'too-long' }
+  } else {
+    const read = await window.api.readMedia(file)
+    if (read.error) {
+      level = { error: read.error }
+    } else {
+      try {
+        const bytes = read.bytes.buffer.slice(read.bytes.byteOffset, read.bytes.byteOffset + read.bytes.byteLength)
+        const { lufs, peak } = await audioEngine.measure(bytes, duration)
+        level = Number.isFinite(lufs) ? { lufs: +lufs.toFixed(1), peak: +peak.toFixed(1) } : { error: 'silent' }
+      } catch {
+        level = { error: 'unreadable' }
+      }
+    }
+  }
+  if (tile.file !== file) return false // given another file meanwhile, which is queued too
+  tile.level = { ...level, file: fingerprint }
+  return true
+}
+
+async function runLevelQueue() {
+  if (levelRunning) return
+  levelRunning = true
+  let changed = 0
+  while (levelQueue.length) {
+    const tile = levelQueue.shift()
+    try {
+      if (await measureTile(tile)) {
+        changed++
+        if (ctxTileId === tile.id) showLevelInfo(tile)
+        if (changed % 10 === 0) saveConfig()
+      }
+    } catch (e) {
+      console.warn('Could not measure', tile.file, e)
+    }
+  }
+  levelRunning = false
+  if (changed % 10) saveConfig()
+}
+
+// The auto-level line in the tile menu
+function showLevelInfo(tile) {
+  const level = tile.level
+  let text = ''
+  if (!autoLevel) text = 'Auto-level is off'
+  else if (!level) text = tile.file ? 'Auto-level: measuring…' : ''
+  else if (level.error === 'missing') text = 'Auto-level: file not found'
+  else if (level.error === 'too-long' || level.error === 'too-large') text = 'Auto-level: too long to measure'
+  else if (level.error === 'silent') text = 'Auto-level: clip is silent'
+  else if (level.error) text = "Auto-level: couldn't measure this file"
+  else {
+    const db = audioEngine.levelDb(level)
+    text = `Auto-level: ${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`
+  }
+  ctxLevelInfo.textContent = text
+}
 
 // ── Import Folder ─────────────────────────────
 importFolderBtn.addEventListener('click', async () => {
@@ -606,14 +719,16 @@ importFolderBtn.addEventListener('click', async () => {
       slot = 0
     }
 
-    page.tiles.push({
+    const tile = {
       id: generateId(),
       slot,
       label: fileInfo.name,
       file: fileInfo.file,
       color: 'default',
       volume: 1.0
-    })
+    }
+    page.tiles.push(tile)
+    queueLevel(tile)
     added++
   }
 
@@ -807,6 +922,7 @@ function showContextMenu(x, y, tile, pageIdx) {
   const vol = Math.round((tile.volume ?? 1.0) * 100)
   ctxVolume.value = vol
   ctxVolumeValue.textContent = vol + '%'
+  showLevelInfo(tile)
 
   buildColorSwatches()
   // Mark current color
@@ -840,10 +956,7 @@ ctxVolume.addEventListener('input', () => {
   if (!tile) return
   tile.volume = ctxVolume.value / 100
   saveConfig()
-  // Update live audio if playing
-  const liveVol = Math.min(1, tile.volume * masterVolume)
-  if (activeAudio.has(tile.id))   activeAudio.get(tile.id).volume = liveVol
-  if (activeMonitor.has(tile.id)) activeMonitor.get(tile.id).volume = liveVol
+  activeAudio.get(tile.id)?.setGain(clipGain(tile))
   // Sync the tile's inline slider
   const tileEl = tileGrid.querySelector(`[data-tile-id="${tile.id}"]`)
   if (tileEl) {
@@ -882,9 +995,11 @@ ctxChangeFile.addEventListener('click', async () => {
   const result = await window.api.selectFile()
   if (!result) return
   tile.file = result.file
+  delete tile.level
   saveConfig()
   renderTiles()
   setInfo(`File updated: ${tile.label}`)
+  queueLevel(tile, { urgent: true })
 })
 
 // Context menu: show in folder
@@ -1164,56 +1279,303 @@ searchClearBtn.addEventListener('click', () => {
   setInfo('Ready')
 })
 
-// ── Audio Output Device ───────────────────────
+// ── Audio Devices ─────────────────────────────
+// VB-Audio's virtual cables (VB-Cable, Hi-Fi Cable, CABLE-A/B). Windows names the playback side
+// "CABLE Input (VB-Audio Virtual Cable)" or "Speakers (VB-Audio Virtual Cable)".
+const CABLE_RE = /VB-Audio|\bCABLE\b/i
+let audioDevices = { outputs: [], inputs: [] }
+
 async function populateAudioDevices() {
   if (!navigator.mediaDevices?.enumerateDevices) return
   try {
     const devices = await navigator.mediaDevices.enumerateDevices()
     const outputs = devices.filter(d => d.kind === 'audiooutput' && d.deviceId !== 'default')
-    if (outputs.length === 0) return
+    // 'default' and 'communications' are Windows' aliases for devices that are also listed by name
+    const inputs = devices.filter(d => d.kind === 'audioinput' && d.deviceId !== 'default' && d.deviceId !== 'communications')
+    audioDevices = { outputs, inputs }
 
-    const buildOptions = (selectEl, currentId, defaultLabel) => {
-      selectEl.innerHTML = `<option value="">${defaultLabel}</option>`
-      outputs.forEach((device, i) => {
+    const buildOptions = (selectEl, list, currentId, defaultLabel, fallbackName) => {
+      selectEl.innerHTML = ''
+      const none = document.createElement('option')
+      none.value = ''
+      none.textContent = defaultLabel
+      selectEl.appendChild(none)
+      list.forEach((device, i) => {
         const opt = document.createElement('option')
         opt.value = device.deviceId
-        opt.textContent = device.label || `Output device ${i + 1}`
+        opt.textContent = device.label || `${fallbackName} ${i + 1}`
         if (device.deviceId === currentId) opt.selected = true
         selectEl.appendChild(opt)
       })
     }
 
-    buildOptions(audioOutputSelect,  selectedSinkId, 'Default')
-    buildOptions(audioMonitorSelect, monitorSinkId,  'Off')
+    if (outputs.length) {
+      buildOptions(audioOutputSelect,  outputs, selectedSinkId, 'Default', 'Output device')
+      buildOptions(audioMonitorSelect, outputs, monitorSinkId,  'Off', 'Output device')
+    }
+    // Not the cable's own output: passing that through would feed the soundboard back into itself
+    buildOptions(micDeviceSelect, inputs.filter(d => !CABLE_RE.test(d.label)), micSettings.deviceId, 'Default microphone', 'Microphone')
   } catch (e) {
     console.warn('Could not enumerate audio devices:', e)
   }
+  refreshSetup()
 }
 
-audioOutputSelect.addEventListener('change', () => {
+// Headsets plugged in or out, VB-Cable installed, ...
+navigator.mediaDevices?.addEventListener('devicechange', populateAudioDevices)
+
+audioOutputSelect.addEventListener('change', async () => {
   selectedSinkId = audioOutputSelect.value
   config.settings.audioOutputDeviceId = selectedSinkId
   saveConfig()
   const label = audioOutputSelect.options[audioOutputSelect.selectedIndex]?.text ?? 'Default'
   setInfo(`Output: ${label}`)
+  if (!(await audioEngine.setOutput('main', selectedSinkId))) setInfo(`Couldn't switch the Output to ${label}`)
+  refreshSetup()
 })
 
-audioMonitorSelect.addEventListener('change', () => {
+audioMonitorSelect.addEventListener('change', async () => {
   monitorSinkId = audioMonitorSelect.value
   config.settings.monitorOutputDeviceId = monitorSinkId
   saveConfig()
   const label = audioMonitorSelect.options[audioMonitorSelect.selectedIndex]?.text ?? 'Off'
   setInfo(monitorSinkId ? `Monitor: ${label}` : 'Monitor disabled')
+  if (!(await audioEngine.setOutput('monitor', monitorSinkId || null))) setInfo(`Couldn't switch the Monitor to ${label}`)
+  refreshSetup()
 })
 
-// ── Help Modal ────────────────────────────────
-helpBtn.addEventListener('click', () => helpModal.classList.remove('hidden'))
-helpCloseBtn.addEventListener('click', () => helpModal.classList.add('hidden'))
+// ── Microphone Passthrough ────────────────────
+// Mixes the user's real mic into the Output, so with Discord's input set to the cable, Discord
+// hears both their voice and the clips.
+function micErrorMessage(e) {
+  switch (e.name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Windows blocked the microphone — Settings → Privacy & security → Microphone → turn on "Let desktop apps access your microphone"'
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return "That microphone isn't connected — pick another in Discord setup"
+    case 'NotReadableError':
+    case 'AbortError':
+      return 'The microphone is busy or unavailable — another app may be using it'
+    default:
+      return `Couldn't start the microphone: ${e.message}`
+  }
+}
+
+function saveMicSettings() {
+  config.settings.mic = { ...micSettings }
+  saveConfig()
+}
+
+async function startMic() {
+  try {
+    const label = await audioEngine.startMic({
+      deviceId: micSettings.deviceId,
+      noiseSuppression: micSettings.noiseSuppression,
+      volume: micSettings.volume,
+      onEnded: () => {
+        micSettings.enabled = false
+        saveMicSettings()
+        setInfo('Your microphone was disconnected — mic passthrough stopped')
+        updateMicUI()
+      }
+    })
+    if (CABLE_RE.test(label)) {
+      // Windows' default recording device is often set to the cable for Discord
+      audioEngine.stopMic()
+      micSettings.enabled = false
+      saveMicSettings()
+      setInfo('Your default microphone is the virtual cable — pick your real microphone in Discord setup')
+    } else {
+      setInfo(`Mic passthrough on: ${label}`)
+    }
+  } catch (e) {
+    micSettings.enabled = false
+    saveMicSettings()
+    setInfo(micErrorMessage(e))
+  }
+  updateMicUI()
+}
+
+async function setMicEnabled(enabled) {
+  micSettings.enabled = enabled
+  saveMicSettings()
+  if (enabled) {
+    await startMic()
+  } else {
+    audioEngine.stopMic()
+    setInfo('Mic passthrough off')
+    updateMicUI()
+  }
+}
+
+function updateMicUI() {
+  const on = audioEngine.micActive()
+  micBtn.classList.toggle('active', on)
+  micBtn.setAttribute('aria-pressed', String(on))
+  micEnabledBox.checked = micSettings.enabled
+  refreshSetup()
+}
+
+micBtn.addEventListener('click', () => setMicEnabled(!micSettings.enabled))
+micEnabledBox.addEventListener('change', () => setMicEnabled(micEnabledBox.checked))
+
+micDeviceSelect.addEventListener('change', () => {
+  micSettings.deviceId = micDeviceSelect.value
+  saveMicSettings()
+  if (micSettings.enabled) startMic()
+})
+
+micNoiseBox.addEventListener('change', () => {
+  micSettings.noiseSuppression = micNoiseBox.checked
+  saveMicSettings()
+  if (micSettings.enabled) startMic()
+})
+
+micVolumeSlider.addEventListener('input', () => {
+  micSettings.volume = micVolumeSlider.value / 100
+  micVolumeValue.textContent = micVolumeSlider.value + '%'
+  audioEngine.setMicVolume(micSettings.volume)
+  saveMicSettings()
+})
+
+// ── Discord Setup (the help window) ───────────
+// Live checks of everything between the soundboard and Discord that the app can see, plus the
+// mic, volume and Discord settings.
+let callDucking = 'unknown' // Windows' communications setting, read when the window opens
+
+function setupStatus() {
+  const rows = []
+  const cable = audioDevices.outputs.find(d => CABLE_RE.test(d.label))
+  const labelOf = (id) => audioDevices.outputs.find(d => d.deviceId === id)?.label
+  const outputLabel = labelOf(selectedSinkId)
+  const outputIsCable = CABLE_RE.test(outputLabel || '')
+
+  if (!cable) {
+    rows.push({ state: 'bad', text: "VB-Cable isn't installed, so Discord can't hear the soundboard.",
+      action: { label: 'Get VB-Cable', run: () => window.api.openExternal('https://vb-audio.com/Cable/') } })
+  } else if (outputIsCable) {
+    rows.push({ state: 'ok', text: `Output goes to ${outputLabel}` })
+  } else {
+    rows.push({ state: 'warn', text: `Output is ${outputLabel || 'your default device'} — Discord won't hear clips.`,
+      action: { label: 'Use VB-Cable', run: () => {
+        audioOutputSelect.value = cable.deviceId
+        audioOutputSelect.dispatchEvent(new Event('change'))
+      } } })
+  }
+
+  if (!monitorSinkId) {
+    rows.push({ state: 'info', text: "Monitor is off — you won't hear clips yourself. Pick your headphones as the Monitor in the toolbar." })
+  } else if (monitorSinkId === selectedSinkId) {
+    rows.push({ state: 'warn', text: 'Monitor is the same device as the Output, so it does nothing.' })
+  } else {
+    rows.push({ state: 'ok', text: `You hear clips on ${labelOf(monitorSinkId) || 'your Monitor device'}` })
+  }
+
+  if (audioEngine.micActive()) {
+    rows.push({ state: 'ok', text: 'Your mic goes to Discord through the soundboard' })
+  } else if (outputIsCable) {
+    rows.push({ state: 'warn', text: 'Discord only hears clips, not your voice — turn on "Send my microphone" below.' })
+  }
+
+  const ducking = { mute: 'mutes other sounds', reduce80: 'turns other sounds down 80%', reduce50: 'turns other sounds down 50%' }[callDucking]
+  if (ducking) {
+    rows.push({ state: 'warn', text: `During calls, Windows ${ducking}, which can include the soundboard. Choose "Do nothing" on the Communications tab.`,
+      action: { label: 'Open sound settings', run: () => window.api.openSoundSettings() } })
+  } else if (callDucking === 'off') {
+    rows.push({ state: 'ok', text: "Windows won't turn the soundboard down during calls" })
+  }
+
+  return { rows, needsAttention: !!cable && !outputIsCable }
+}
+
+function refreshSetup() {
+  const { rows, needsAttention } = setupStatus()
+  // A dot on the help button when the cable is installed but not used
+  helpBtn.classList.toggle('attention', needsAttention)
+  const icons = { ok: '✓', warn: '!', bad: '✕', info: 'i' }
+  setupChecks.innerHTML = ''
+  for (const row of rows) {
+    const el = document.createElement('div')
+    el.className = `setup-check ${row.state}`
+    const icon = document.createElement('span')
+    icon.className = 'setup-icon'
+    icon.textContent = icons[row.state]
+    const text = document.createElement('span')
+    text.className = 'setup-text'
+    text.textContent = row.text
+    el.append(icon, text)
+    if (row.action) {
+      const btn = document.createElement('button')
+      btn.className = 'btn btn-secondary btn-sm'
+      btn.textContent = row.action.label
+      btn.addEventListener('click', row.action.run)
+      el.appendChild(btn)
+    }
+    setupChecks.appendChild(el)
+  }
+}
+
+// Level meters, drawn while the window is open
+function setMeter(el, db) {
+  const percent = Number.isFinite(db) ? Math.max(0, Math.min(100, (db + 60) / 60 * 100)) : 0
+  el.style.width = percent + '%'
+  el.classList.toggle('hot', db > -1)
+}
+function drawMeters() {
+  if (helpModal.classList.contains('hidden')) return
+  const { output, mic } = audioEngine.levels()
+  setMeter(outMeter, output)
+  setMeter(micMeter, mic)
+  requestAnimationFrame(drawMeters)
+}
+
+function syncSetupControls() {
+  micEnabledBox.checked = micSettings.enabled
+  micDeviceSelect.value = micSettings.deviceId
+  micVolumeSlider.value = Math.round(micSettings.volume * 100)
+  micVolumeValue.textContent = micVolumeSlider.value + '%'
+  micNoiseBox.checked = micSettings.noiseSuppression
+  autoLevelBox.checked = autoLevel
+}
+
+async function openSetup() {
+  syncSetupControls()
+  refreshSetup()
+  const wasHidden = helpModal.classList.contains('hidden')
+  helpModal.classList.remove('hidden')
+  if (wasHidden) requestAnimationFrame(drawMeters)
+  callDucking = await window.api.getCallDucking()
+  refreshSetup()
+}
+function closeSetup() {
+  helpModal.classList.add('hidden')
+}
+
+helpBtn.addEventListener('click', openSetup)
+helpCloseBtn.addEventListener('click', closeSetup)
 helpModal.addEventListener('click', (e) => {
-  if (e.target === helpModal) helpModal.classList.add('hidden')
+  if (e.target === helpModal) closeSetup()
 })
 // Open via native Help menu
-window.api.onOpenHelpModal(() => helpModal.classList.remove('hidden'))
+window.api.onOpenHelpModal(openSetup)
+
+testToneBtn.addEventListener('click', () => {
+  audioEngine.playTestTone()
+  setInfo('Test sound played to your Output (and Monitor)')
+})
+
+autoLevelBox.addEventListener('change', () => {
+  autoLevel = autoLevelBox.checked
+  config.settings.autoLevel = autoLevel
+  saveConfig()
+  // Sounds already playing take the new volume
+  for (const page of config.pages) {
+    for (const tile of page.tiles) activeAudio.get(tile.id)?.setGain(clipGain(tile))
+  }
+  setInfo(autoLevel ? 'Auto-level on: clips play at an even volume' : 'Auto-level off: clips play at their own volume')
+})
 // Status-bar messages from the main process (e.g. Help > Copy Diagnostic Info)
 window.api.onShowInfo(setInfo)
 
@@ -1231,11 +1593,20 @@ async function init() {
     btn.classList.toggle('active', btn.dataset.size === currentTileSize)
   })
   updateGlobalHotkeysBtn()
+  audioEngine.setMaster(masterVolume)
+  audioEngine.setOutput('main', selectedSinkId)
+  audioEngine.setOutput('monitor', monitorSinkId || null)
   renderPages()
   renderTiles()
   await populateAudioDevices()
+  syncSetupControls()
   setInfo((await window.api.getStartupNotice()) || 'Ready — click a tile to play, right-click for options')
+  if (micSettings.enabled) startMic()
   syncGlobalHotkeys()
+  // Measure any clips not measured yet, or whose files changed since
+  for (const page of config.pages) {
+    for (const tile of page.tiles) queueLevel(tile)
+  }
 }
 
 init()

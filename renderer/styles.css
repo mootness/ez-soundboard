@@ -581,6 +581,8 @@ html, body {
 .context-volume span { font-weight: 600; }
 .context-volume input[type=range] { width: 100%; }
 .context-volume #ctxVolumeValue { font-size: 0.75rem; color: var(--text-muted); }
+.context-volume .ctx-level-info { font-size: 0.7rem; font-weight: 400; color: var(--text-muted); }
+.context-volume .ctx-level-info:empty { display: none; }
 
 .context-colors {
   flex-direction: column;
@@ -764,31 +766,118 @@ input[type=range]::-webkit-slider-thumb {
   font-size: 0.83rem;
 }
 
-.help-device-row {
+/* Discord setup: live status rows */
+.setup-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.setup-check {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 6px 0;
-}
-
-.help-badge {
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 4px;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.help-badge.output  { background: var(--bg3); color: var(--accent); border: 1px solid var(--accent); }
-.help-badge.monitor { background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
-
-.help-note {
-  background: rgba(239, 83, 80, 0.1);
-  border: 1px solid rgba(239, 83, 80, 0.35);
+  padding: 7px 10px;
   border-radius: 8px;
-  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+.setup-check .setup-icon {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.setup-check.ok   .setup-icon { background: rgba(39,174,96,0.2);  color: #4cd17f; }
+.setup-check.warn .setup-icon { background: rgba(230,126,34,0.2); color: #f0a050; }
+.setup-check.bad  .setup-icon { background: rgba(239,83,80,0.2);  color: var(--danger); }
+.setup-check.info .setup-icon { background: rgba(79,195,247,0.15); color: var(--accent); }
+.setup-check .setup-text { flex: 1; min-width: 0; }
+.setup-check .btn { flex-shrink: 0; white-space: nowrap; }
+
+/* Discord setup: sections and controls */
+.setup-section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.setup-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+  cursor: pointer;
+}
+.setup-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+.setup-label {
+  width: 100px;
+  flex-shrink: 0;
   color: var(--text-muted);
-  font-size: 0.79rem;
+  font-size: 0.78rem;
+}
+.setup-control { flex: 1; min-width: 0; max-width: none; }
+.setup-value {
+  width: 40px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+.setup-note {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  margin: 6px 0 0;
+}
+.setup-steps { padding-left: 20px; }
+.setup-steps li { margin: 3px 0; }
+
+/* Level meters */
+.meter {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.meter-fill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #27ae60, #f1c40f 85%, #e67e22);
+  transition: width 60ms linear;
+}
+.meter-fill.hot { background: var(--danger); }
+
+/* Mic button while passthrough is on */
+.btn-secondary.active {
+  background: var(--bg3);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* A dot on the help button when the setup needs attention */
+#helpBtn { position: relative; }
+#helpBtn.attention::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 2px solid var(--bg2);
 }
 
 /* ── Layout ───────────────────────────────────── */
@@ -834,10 +923,14 @@ body {
 /* The window can be snapped into small Windows snap zones (see minWidth/minHeight in main.js),
    so the layout adapts below instead of wrapping or clipping. */
 
-/* Narrow: drop the in-app title (the window's title bar already shows it) and wrap the toolbar
-   into two rows — search and toggles above, the two device pickers side by side below */
-@media (max-width: 720px) {
+/* Drop the in-app title first — the window's title bar already shows it */
+@media (max-width: 780px) {
   .header-left { display: none; }
+}
+
+/* Narrow: wrap the toolbar into two rows — search and toggles above, the two device pickers
+   side by side below */
+@media (max-width: 720px) {
   .toolbar { flex-wrap: wrap; row-gap: 6px; }
   .toolbar-right { display: contents; }
   .audio-device-group { flex: 1 1 100%; min-width: 0; flex-direction: row; gap: 10px; }
@@ -846,8 +939,8 @@ body {
   #shortcutHint { display: none; }
 }
 
-/* Narrower still: the Import button shrinks to its icon */
-@media (max-width: 520px) {
+/* Narrower still: the Import and Mic buttons shrink to their icons */
+@media (max-width: 600px) {
   .btn-text { display: none; }
 }
 
@@ -868,7 +961,8 @@ body {
   .context-volume,
   .context-colors { flex-direction: row; align-items: center; gap: 8px; padding-bottom: 4px; }
   .context-volume input[type=range] { flex: 1; min-width: 0; }
-  .ctx-label-text { display: none; }
+  .ctx-label-text,
+  .context-volume .ctx-level-info { display: none; }
   .color-swatch { width: 18px; height: 18px; }
 
   .modal { padding: 12px 16px; max-height: calc(100vh - 12px); }

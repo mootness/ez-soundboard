@@ -16,7 +16,7 @@
     <div class="header-center">
       <div class="master-volume">
         <label for="masterVolume">Master</label>
-        <input type="range" id="masterVolume" min="0" max="100" value="100" />
+        <input type="range" id="masterVolume" min="0" max="200" value="100" />
         <span id="masterVolumeValue">100%</span>
       </div>
     </div>
@@ -24,10 +24,13 @@
       <button id="importFolderBtn" class="btn btn-secondary" title="Import all audio from a folder">
         &#128193;<span class="btn-text"> Import Folder</span>
       </button>
+      <button id="micBtn" class="btn btn-secondary" aria-pressed="false" title="Send your microphone to Discord through the soundboard (set it up in Discord setup)">
+        &#127908;<span class="btn-text"> Mic</span>
+      </button>
       <button id="stopAllBtn" class="btn btn-danger" title="Stop all playing sounds">
         &#9632; Stop All
       </button>
-      <button id="helpBtn" class="btn btn-secondary btn-icon" title="Discord &amp; audio routing help">?</button>
+      <button id="helpBtn" class="btn btn-secondary btn-icon" title="Discord setup &amp; help">?</button>
     </div>
   </header>
 
@@ -96,8 +99,9 @@
     <button class="context-item" id="ctxChangeFile">&#127925; Change audio file</button>
     <div class="context-item context-volume">
       <span>&#128266;<span class="ctx-label-text"> Volume</span></span>
-      <input type="range" id="ctxVolume" min="0" max="100" value="100" />
+      <input type="range" id="ctxVolume" min="0" max="200" value="100" />
       <span id="ctxVolumeValue">100%</span>
+      <span class="ctx-level-info" id="ctxLevelInfo"></span>
     </div>
     <div class="context-item context-colors">
       <span>&#127912;<span class="ctx-label-text"> Color</span></span>
@@ -137,39 +141,57 @@
     </div>
   </div>
 
-  <!-- Help modal -->
+  <!-- Discord setup (also the help window): live checks, mic passthrough, volume, Discord settings -->
   <div id="helpModal" class="modal-overlay hidden">
-    <div class="modal modal-wide">
-      <h3>&#127911; Discord &amp; Audio Routing Setup</h3>
+    <div class="modal modal-wide setup-modal">
+      <h3>&#127911; Discord setup</h3>
 
       <div class="help-section">
-        <p class="help-intro">Discord records your <strong>microphone</strong>, not your speakers. To send soundboard clips into Discord you need a <strong>virtual audio cable</strong> — software that makes one app's output appear as another app's microphone input.</p>
+        <p class="help-intro">Discord hears your <strong>microphone</strong>, not your speakers. A free <strong>virtual audio cable</strong> (VB-Cable) carries the soundboard into Discord as if it were a microphone — and EZ Soundboard can mix your real mic into it too.</p>
       </div>
 
-      <div class="help-section">
-        <div class="help-step-title">Step 1 — Install VB-Cable (free, one-time)</div>
-        <p>Download from <strong>vb-audio.com/Cable</strong> and run the installer as Administrator. Restart your PC if prompted. This adds two virtual devices: <em>CABLE Input</em> and <em>CABLE Output</em>.</p>
-      </div>
+      <div class="setup-checks" id="setupChecks"><!-- Rendered by JS --></div>
 
-      <div class="help-section">
-        <div class="help-step-title">Step 2 — Configure EZ Soundboard</div>
-        <div class="help-device-row">
-          <span class="help-badge output">&#128266; Output</span>
-          <span>CABLE Input (VB-Audio Virtual Cable)</span>
+      <div class="help-section setup-section">
+        <div class="help-step-title">&#127908; Your voice</div>
+        <label class="setup-toggle"><input type="checkbox" id="micEnabled" /> Send my microphone to Discord through the soundboard</label>
+        <div class="setup-row">
+          <span class="setup-label">Microphone</span>
+          <select id="micDevice" class="audio-output-select setup-control"></select>
         </div>
-        <div class="help-device-row">
-          <span class="help-badge monitor">&#127911; Monitor</span>
-          <span>Your headphones / speakers (so <em>you</em> still hear clips)</span>
+        <div class="setup-row">
+          <span class="setup-label">Mic volume</span>
+          <input type="range" id="micVolume" class="setup-control" min="0" max="200" value="100" />
+          <span class="setup-value" id="micVolumeValue">100%</span>
+        </div>
+        <label class="setup-toggle"><input type="checkbox" id="micNoise" checked /> Reduce background noise</label>
+        <div class="setup-row">
+          <span class="setup-label">Mic level</span>
+          <div class="meter setup-control"><div class="meter-fill" id="micMeter"></div></div>
+        </div>
+        <p class="setup-note">Keep EZ Soundboard running (it can sit in the tray) — while it's closed, Discord won't hear your mic. Use headphones for the Monitor so your mic doesn't pick up the clips.</p>
+      </div>
+
+      <div class="help-section setup-section">
+        <div class="help-step-title">&#128266; Volume</div>
+        <label class="setup-toggle"><input type="checkbox" id="autoLevel" checked /> Even out clip volumes (auto-level)</label>
+        <p class="setup-note">Each clip is measured once and played at the same loudness. Tile and master volumes go up to 200% on top of that, and a limiter stops loud settings from distorting.</p>
+        <div class="setup-row">
+          <span class="setup-label">Sent to Discord</span>
+          <div class="meter setup-control"><div class="meter-fill" id="outMeter"></div></div>
+          <button id="testToneBtn" class="btn btn-secondary btn-sm" title="Plays a short chime to your Output and Monitor — Discord hears it too">Test sound</button>
         </div>
       </div>
 
-      <div class="help-section">
-        <div class="help-step-title">Step 3 — Configure Discord</div>
-        <p>Settings → Voice &amp; Video → <strong>Input Device</strong> → <em>CABLE Output (VB-Audio Virtual Cable)</em></p>
-      </div>
-
-      <div class="help-section help-note">
-        <strong>&#9888; VB-Cable is not included</strong> — it must be installed separately. Without it, the Output and Monitor dropdowns above will only show your physical devices and Discord routing will not work.
+      <div class="help-section setup-section">
+        <div class="help-step-title">&#128172; In Discord: Settings → Voice &amp; Video</div>
+        <ol class="setup-steps">
+          <li><strong>Input Device:</strong> the VB-Cable one, "CABLE Output (VB-Audio Virtual Cable)"</li>
+          <li><strong>Noise Suppression:</strong> None. Discord's treats sound effects as noise and turns them down.</li>
+          <li><strong>Echo Cancellation</strong> and <strong>Automatic Gain Control:</strong> off</li>
+          <li><strong>Input Sensitivity:</strong> turn off "Automatically determine" and drag the slider to the far left</li>
+        </ol>
+        <p class="setup-note">With "Send my microphone" on, the soundboard cleans up your mic itself, so turning these off doesn't let background noise through.</p>
       </div>
 
       <div class="help-section" style="text-align:center;padding-top:10px;border-top:1px solid rgba(0,0,0,0.1);margin-top:4px;">
@@ -185,6 +207,7 @@
     </div>
   </div>
 
+  <script src="audio.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
