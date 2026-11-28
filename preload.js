@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   showInFolder: (filePath) => ipcRenderer.invoke('shell:showInFolder', filePath),
   onOpenHelpModal: (cb) => ipcRenderer.on('open-help-modal', cb),
   onShowInfo: (cb) => ipcRenderer.on('show-info', (_, message) => cb(message)),
+  onStopAll: (cb) => ipcRenderer.on('stop-all', () => cb()),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   statMedia: (filePath) => ipcRenderer.invoke('media:stat', filePath),
   readMedia: (filePath) => ipcRenderer.invoke('media:read', filePath),
