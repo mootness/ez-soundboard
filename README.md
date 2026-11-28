@@ -28,7 +28,7 @@ The installer isn't code-signed, so Windows may show "Windows protected your PC"
 - **Monitor Output** — Hear clips in your own headphones while Discord gets the primary output, with its own volume (the header's **Monitor** slider) so you can keep clips quieter in your ears than in Discord
 - **Per-tile controls** — Individual volume, color labels, rename, and reassign
 - **Import folder** — Bulk-add all audio files from a folder in one click
-- **System tray** — Click the tray icon to hide or show the window; global hotkeys keep working while it's hidden
+- **System tray** — Closing the window keeps the app running in the tray, so global hotkeys and Mic Passthrough keep working. Click the tray icon to open it again, or right-click it to stop all sounds or quit. Untick **Close to Tray** (in the tray menu or the Window menu) to make the close button quit instead
 - **Tile sizes** — Switch between Small / Medium / Large grid layouts
 - **Snaps anywhere** — Fits Windows snap positions (halves, corners, side strips); the layout compacts in small windows, and in short ones the search and output bar hides to leave room for tiles
 - **Search** — Filter tiles by name instantly
@@ -57,7 +57,7 @@ Discord records your **microphone**, not your speakers. To send soundboard clips
    - **Echo Cancellation** and **Automatic Gain Control:** off
    - **Input Sensitivity:** turn off "Automatically determine" and drag the slider to the far left
 
-Keep EZ Soundboard running while you're in a call (it can sit in the tray): with Mic on, Discord hears your voice through it.
+Keep EZ Soundboard running while you're in a call: with Mic on, Discord hears your voice through it. Closing the window leaves it running in the tray; quitting it (right-click the tray icon → Quit) cuts your mic off in Discord.
 
 The **?** button (or Help → Discord & Audio Setup) opens **Discord setup**, which checks your setup live. It shows whether VB-Cable is installed and used, whether your mic is going through, and whether Windows is turning the soundboard down during calls. It also has mic and volume settings, level meters and a test sound.
 
@@ -106,7 +106,7 @@ Your soundboard config (`soundboard.json`) is stored in:
 
 Audio files aren't copied — tiles point to your files where they are, so keep them in place.
 
-Next to it, `soundboard.backup.json` is the board as it was the last time the app started. If `soundboard.json` is ever damaged, the app restores from that copy by itself and keeps the damaged file as `soundboard.damaged-<number>.json`.
+Next to it, `soundboard.backup.json` is the board as it was the last time the app started. If `soundboard.json` is ever damaged, the app restores from that copy by itself and keeps the damaged file as `soundboard.damaged-<number>.json`. `app-settings.json` holds the **Close to Tray** setting.
 
 ---
 

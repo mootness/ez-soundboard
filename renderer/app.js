@@ -1602,6 +1602,8 @@ autoLevelBox.addEventListener('change', () => {
 })
 // Status-bar messages from the main process (e.g. Help > Copy Diagnostic Info)
 window.api.onShowInfo(setInfo)
+// The tray icon's Stop All Sounds, used while the window is hidden in the tray
+window.api.onStopAll(stopAll)
 
 // ── Strip extension helper ────────────────────
 function stripExtension(filename) {

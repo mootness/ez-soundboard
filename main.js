@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, globalShortcut, clipboard } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, Tray, Menu, nativeImage, globalShortcut, clipboard, screen } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { spawn, execFile } = require('child_process')
@@ -14,6 +14,10 @@ const DATA_DIR = process.env.PORTABLE_EXECUTABLE_DIR
 const CONFIG_PATH = path.join(DATA_DIR, 'soundboard.json')
 // The board as it was the last time the app started with a readable file
 const CONFIG_BACKUP_PATH = path.join(DATA_DIR, 'soundboard.backup.json')
+// Settings the main process uses on its own (what the close button does), kept apart from the
+// board file the renderer writes
+const APP_SETTINGS_PATH = path.join(DATA_DIR, 'app-settings.json')
+const ICON_PATH = path.join(__dirname, 'assets', 'icon.png')
 
 // File types Chromium can play the sound of — video files play their audio track.
 // Keep in sync with MEDIA_EXTS in renderer/app.js.
@@ -26,9 +30,28 @@ let mainWindow
 let tray
 // Something the user should be told once the window is up (e.g. the board was restored)
 let startupNotice = null
+// closeToTray: the close button hides the window to the tray instead of quitting.
+// trayHintShown: the "still running" notification has been shown once.
+let appSettings = { closeToTray: true, trayHintShown: false }
 
 function ensureDirectories() {
   fs.mkdirSync(DATA_DIR, { recursive: true })
+}
+
+function readAppSettings() {
+  try {
+    appSettings = { ...appSettings, ...JSON.parse(fs.readFileSync(APP_SETTINGS_PATH, 'utf-8')) }
+  } catch {
+    // first run, or unreadable: keep the defaults
+  }
+}
+
+function saveAppSettings() {
+  try {
+    fs.writeFileSync(APP_SETTINGS_PATH, JSON.stringify(appSettings, null, 2), 'utf-8')
+  } catch (e) {
+    console.error('Failed to save app settings:', e)
+  }
 }
 
 function defaultConfig() {
@@ -120,38 +143,104 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'))
 
-  mainWindow.on('close', () => {
+  // The close button leaves the app running in the tray, so hotkeys and the mic going to
+  // Discord carry on. Anything that really quits (Quit, an update installing, Windows shutting
+  // down) sets app.isQuitting first. Without a tray icon there'd be no way back, so it quits.
+  mainWindow.on('close', (event) => {
+    if (!app.isQuitting && appSettings.closeToTray && tray) {
+      event.preventDefault()
+      mainWindow.hide()
+      showTrayHint()
+      return
+    }
     app.isQuitting = true
     app.quit()
   })
+  mainWindow.on('session-end', () => {
+    app.isQuitting = true
+  })
+}
+
+function showWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function quitApp() {
+  app.isQuitting = true
+  app.quit()
+}
+
+function sendToWindow(channel, ...args) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, ...args)
+}
+
+// The app icon at `size` px on a 100% display, made at the real pixel size for the main
+// display's scale. Windows is handed the image as it is, so a 16 px tray icon would be
+// stretched (and blurry) at 150%.
+function appIcon(size) {
+  const image = nativeImage.createFromPath(ICON_PATH)
+  if (image.isEmpty()) return image
+  const pixels = Math.round(size * screen.getPrimaryDisplay().scaleFactor)
+  return image.resize({ width: pixels, height: pixels, quality: 'best' })
 }
 
 function createTray() {
-  // Use a simple fallback if no icon exists
-  let trayIcon
-  const iconPath = path.join(__dirname, 'assets', 'icon.png')
-  if (fs.existsSync(iconPath)) {
-    trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
-  } else {
-    trayIcon = nativeImage.createEmpty()
+  const icon = appIcon(16)
+  if (icon.isEmpty()) return // no icon to show, so no tray (and the close button quits)
+  try {
+    tray = new Tray(icon)
+  } catch (e) {
+    console.error('Failed to create the tray icon:', e)
+    return
   }
-
-  tray = new Tray(trayIcon)
   tray.setToolTip('EZ Soundboard')
+  tray.setContextMenu(buildTrayMenu())
+  tray.on('click', showWindow)
+}
 
-  const contextMenu = Menu.buildFromTemplate([
-    { label: 'Show', click: () => mainWindow.show() },
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    { label: 'Open EZ Soundboard', click: showWindow },
+    { label: 'Stop All Sounds', click: () => sendToWindow('stop-all') },
     { type: 'separator' },
-    {
-      label: 'Quit', click: () => {
-        app.isQuitting = true
-        app.quit()
-      }
-    }
+    closeToTrayMenuItem(),
+    { type: 'separator' },
+    { label: 'Quit EZ Soundboard', click: quitApp }
   ])
-  tray.setContextMenu(contextMenu)
-  tray.on('click', () => {
-    mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show()
+}
+
+// In both the tray menu and the Window menu
+function closeToTrayMenuItem() {
+  return {
+    label: 'Close to Tray',
+    type: 'checkbox',
+    checked: appSettings.closeToTray,
+    click: (item) => setCloseToTray(item.checked)
+  }
+}
+
+function setCloseToTray(on) {
+  appSettings.closeToTray = on
+  saveAppSettings()
+  // Rebuilt so both menus show the new setting
+  tray?.setContextMenu(buildTrayMenu())
+  createAppMenu()
+}
+
+// Shown once, the first time the window goes to the tray: otherwise closing it looks like
+// quitting, and Windows 11 starts a new tray icon out hidden behind the ^ arrow
+function showTrayHint() {
+  if (appSettings.trayHintShown) return
+  appSettings.trayHintShown = true
+  saveAppSettings()
+  tray.displayBalloon({
+    title: 'EZ Soundboard is still running',
+    content: "Global hotkeys and your mic keep working. Click its icon by the clock to open it again (look under ^ if you can't see it), or right-click the icon to quit.",
+    icon: appIcon(32),
+    noSound: true
   })
 }
 
@@ -336,7 +425,10 @@ function createAppMenu() {
       label: 'Window',
       submenu: [
         { role: 'minimize' },
-        { role: 'close' }
+        { role: 'close' },
+        { type: 'separator' },
+        closeToTrayMenuItem(),
+        { label: 'Quit EZ Soundboard', click: quitApp }
       ]
     },
     {
@@ -376,15 +468,12 @@ function createAppMenu() {
 if (app.isPackaged && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.show()
-    mainWindow.focus()
-  })
+  // e.g. opened from the Start menu while it's in the tray: bring the window back
+  app.on('second-instance', showWindow)
 
   app.whenReady().then(() => {
     ensureDirectories()
+    readAppSettings()
     createWindow()
     createTray()
     createAppMenu()
