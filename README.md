@@ -21,7 +21,10 @@ The installer isn't code-signed, so Windows may show "Windows protected your PC"
 - **Tiles & Pages** — Organize sounds across multiple named pages
 - **Keyboard Shortcuts** — Assign a key or combo (e.g. `Alt+1`, `Ctrl+Shift+F`) to any tile for instant playback
 - **Global Hotkeys** — Optionally make shortcuts work while other apps (like games) are focused
-- **Virtual Cable Support** — Route audio to Discord via VB-Cable (free)
+- **Virtual Cable Support** — Route audio to Discord via VB-Cable (free), with a setup check that spots what's wrong
+- **Mic Passthrough** — Mix your real microphone into the cable, so Discord hears your voice and your clips
+- **Auto-level** — Every clip is measured once and played at the same loudness, so quiet clips aren't drowned out
+- **Volume up to 200%** — Per tile and master, with a limiter that stops loud settings from distorting
 - **Monitor Output** — Hear clips in your own headphones while Discord gets the primary output
 - **Per-tile controls** — Individual volume, color labels, rename, and reassign
 - **Import folder** — Bulk-add all audio files from a folder in one click
@@ -46,10 +49,24 @@ By default shortcuts only work while EZ Soundboard is the focused window. Turn o
 Discord records your **microphone**, not your speakers. To send soundboard clips into Discord you need a virtual audio cable.
 
 1. **Install VB-Cable** (free) — download from [vb-audio.com/Cable](https://vb-audio.com/Cable) and run the installer as Administrator
-2. **In EZ Soundboard** — set Output to `CABLE Input (VB-Audio Virtual Cable)`, set Monitor to your headphones/speakers
-3. **In Discord** — Settings → Voice & Video → Input Device → `CABLE Output (VB-Audio Virtual Cable)`
+2. **In EZ Soundboard** — set Output to the VB-Cable device (Windows calls it `CABLE Input (VB-Audio Virtual Cable)` or `Speakers (VB-Audio Virtual Cable)`), set Monitor to your headphones
+3. **Keep your voice in Discord** — click **🎤 Mic** in the header (or turn on "Send my microphone" in Discord setup). The soundboard mixes your real mic into the cable and cleans up its background noise.
+4. **In Discord** — Settings → Voice & Video:
+   - **Input Device:** `CABLE Output (VB-Audio Virtual Cable)`
+   - **Noise Suppression:** None — Discord's treats sound effects as noise and turns them down
+   - **Echo Cancellation** and **Automatic Gain Control:** off
+   - **Input Sensitivity:** turn off "Automatically determine" and drag the slider to the far left
 
-The in-app **Help** menu (Help → Discord & Audio Setup) walks through this step by step.
+Keep EZ Soundboard running while you're in a call (it can sit in the tray): with Mic on, Discord hears your voice through it.
+
+The **?** button (or Help → Discord & Audio Setup) opens **Discord setup**, which checks your setup live. It shows whether VB-Cable is installed and used, whether your mic is going through, and whether Windows is turning the soundboard down during calls. It also has mic and volume settings, level meters and a test sound.
+
+### Sounds quiet in Discord?
+
+- **Auto-level** (on by default, in Discord setup) brings quiet clips up to a common level, and tile and master volumes go to 200%.
+- **Discord's voice processing** is the most common cause: set Noise Suppression to None and turn off Echo Cancellation and Automatic Gain Control (step 4).
+- **Windows turns other sounds down 80% during calls** by default, which can include the soundboard. Sound control panel → **Communications** tab → **Do nothing**. Discord setup warns when this is on, with a button to open it.
+- **Check the cable's own levels:** Windows Sound settings → the VB-Cable playback device and `CABLE Output` recording device, both at 100%.
 
 ---
 
