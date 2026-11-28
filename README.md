@@ -25,7 +25,7 @@ The installer isn't code-signed, so Windows may show "Windows protected your PC"
 - **Mic Passthrough** — Mix your real microphone into the cable, so Discord hears your voice and your clips
 - **Auto-level** — Every clip is measured once and played at the same loudness, so quiet clips aren't drowned out
 - **Volume up to 200%** — Per tile and master, with a limiter that stops loud settings from distorting
-- **Monitor Output** — Hear clips in your own headphones while Discord gets the primary output
+- **Monitor Output** — Hear clips in your own headphones while Discord gets the primary output, with its own volume (the header's **Monitor** slider) so you can keep clips quieter in your ears than in Discord
 - **Per-tile controls** — Individual volume, color labels, rename, and reassign
 - **Import folder** — Bulk-add all audio files from a folder in one click
 - **System tray** — Click the tray icon to hide or show the window; global hotkeys keep working while it's hidden

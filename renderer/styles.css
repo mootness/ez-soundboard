@@ -66,21 +66,28 @@ html, body {
 }
 .app-header .btn { white-space: nowrap; }
 
+/* Master above Monitor, like the Output / Monitor pickers in the toolbar */
 .header-center {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
 }
 
 .master-volume {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
+  line-height: 1.2;
   color: var(--text-muted);
 }
+.master-volume label { width: 48px; }
 .master-volume input[type=range] { width: 100px; }
-.master-volume #masterVolumeValue { width: 36px; font-size: 0.78rem; }
+.master-volume #masterVolumeValue,
+.master-volume #monitorVolumeValue { width: 36px; }
+/* The Monitor volume does nothing while the Monitor is off */
+.master-volume.disabled { opacity: 0.45; }
 
 .header-right {
   display: flex;
